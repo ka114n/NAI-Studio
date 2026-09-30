@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    小组件 · **统计**（余额 + 日历热点图）—— 用户 2026-09-26 定稿：
+    「宽3高2，**减小格子大小放进去**」。
+
+    ## 版面预算（总高必须 <= 160dp，否则底部被裁 —— 用户报过）
+
+      余额行         18dp
+      分隔与间距      6dp
+      月份标题行     14dp
+      星期表头       10dp
+      日历最多 6 行  6 × (16 格 + 1 间距) = 102dp
+      内边距(上6下4) 10dp
+      合计          160dp   余量 0（正好）
+
+    ⇒ 所以这里所有的尺寸都是**按预算压过的**，改动任何一项都要重算这张表。
+
+    ⚠️⚠️ **`RemoteViews` 只认一小撮控件**（见 `@RemoteView` 白名单）：
+        `LinearLayout` / `FrameLayout` / `RelativeLayout` / `GridLayout` /
+        `TextView` / `ImageView` / `Button` / `ProgressBar` / `ViewStub`…
+        **裸 `<View>` 不在里面** ⇒ 启动器 inflate 会**整个失败**、小组件一片空白
+        （用户报过）。所以分隔线也是 `ImageView` 配纯色底。
+
+    ⚠️ 两个 `GridLayout` 是**空壳**，格子由代码 `addView` 塞进来
+       （格子数随月份变，XML 里没法预置）。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_background"
+    android:paddingLeft="10dp"
+    android:paddingRight="10dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="4dp">
+
+    <!-- 余额那一行：闪电 + 数字 + 右上角时间（18dp 预算） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="18dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:src="@drawable/widget_bolt"
+            android:contentDescription="@string/widget_balance_label"
+            android:layout_marginRight="4dp" />
+
+        <TextView
+            android:id="@+id/widget_balance_value"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/widget_text"
+            android:text="@string/widget_balance_placeholder" />
+
+        <TextView
+            android:id="@+id/widget_stamp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="9sp"
+            android:maxLines="1"
+            android:textColor="@color/widget_text_dim" />
+    </LinearLayout>
+
+    <!-- 分隔线（**ImageView 不是 View**，白名单问题见文件头）；连同上下间距共 6dp -->
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="3dp"
+        android:layout_marginBottom="2dp"
+        android:background="@color/widget_divider"
+        android:contentDescription="@null" />
+
+    <!-- 月份标题 + 左右切月（14dp 预算） -->
+    <!-- ⚠️ RemoteViews **不支持手指滑动**，切月只能点箭头（见 WidgetMonthReceiver） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="14dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/widget_month_prev"
+            android:layout_width="20dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:textColor="@color/widget_text"
+            android:text="‹" />
+
+        <TextView
+            android:id="@+id/widget_month_label"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textSize="9sp"
+            android:maxLines="1"
+            android:textColor="@color/widget_text_dim"
+            android:text="@string/widget_month_placeholder" />
+
+        <TextView
+            android:id="@+id/widget_month_next"
+            android:layout_width="20dp"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:textSize="12sp"
+            android:textColor="@color/widget_text"
+            android:text="›" />
+    </LinearLayout>
+
+    <!-- 星期表头（10dp 预算；周一在最左）
+         ⚠️ `match_parent` —— 要让 7 列的 `columnWeight` 有"父宽"可分
+            （写 wrap_content 的话父宽=内容宽，权重就没意义了）。 -->
+    <GridLayout
+        android:id="@+id/widget_week_header"
+        android:layout_width="match_parent"
+        android:layout_height="10dp"
+        android:columnCount="7" />
+
+    <!-- 日历格子：**空壳**，格子由代码 addView 进来
+         ⚠️ 同样 `match_parent`，让格子的 columnWeight 把整行铺满。 -->
+    <GridLayout
+        android:id="@+id/widget_heatmap"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:columnCount="7" />
+
+</LinearLayout>

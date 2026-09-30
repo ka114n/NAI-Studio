@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    日历里的一格（一天）—— **单层 `TextView`**：底色 = 热度档位，格子里写"几号"。
+
+    ⚠️⚠️ **这是 1.1.116 那一版的状态**（用户 2026-09-26：「回退一个版本」→「**1.1.116**」）。
+       现在重新打成 **1.1.118**（不改版本号的话会触发 Android 的降级拦截
+       `INSTALL_FAILED_VERSION_DOWNGRADE`，而强制降级会**清空 App 数据** ——
+       用户有 818 张历史图，不能那么干）。
+
+    ## 1.1.116 的排布口径（用户当时接受的）
+
+    宽度用 `layout_columnWeight="1"`（等分父宽 ⇒ 整行**铺满**），
+    高度用**固定** `heat_cell_size`（16dp）⇒ 每格一样高。
+
+    ⚠️ 这样格子**不是像素级正方形**（列宽约 25.7dp、高 16dp = 偏长方形）。
+       用户后来改口要"正方形"，我在 1.1.117 改成了"格子固定 16dp + 空隙吃剩余宽度"；
+       但他现在选择回退到 116，所以恢复成这一版。
+
+    ⚠️ 权重留在**自己这一层**（不嵌套）—— 嵌套会让 LayoutParams 传丢，
+       1.1.113 就是那么塌成"竖长条、一行一个"的。
+    ⚠️ 控件必须在 `RemoteViews` 白名单里 ⇒ 只用 `TextView`（裸 `<View>` 会让整块空白）。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/heat_cell"
+    android:layout_width="0dp"
+    android:layout_height="@dimen/heat_cell_size"
+    android:layout_columnWeight="1"
+    android:layout_margin="0.5dp"
+    android:gravity="center"
+    android:textSize="9sp"
+    android:maxLines="1"
+    android:background="@color/heat_0" />

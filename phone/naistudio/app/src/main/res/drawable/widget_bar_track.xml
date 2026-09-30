@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    **渐变进度条**（用户 2026-09-26：「带进度条」，参考图那条蓝→绿）。
+    ⚠️ 用 `@drawable` + `ImageView`，**不是**裸 `<View>`：
+       裸 `View` 不在 RemoteViews 的白名单里，塞进小组件会让整块布局**静默 inflate 失败**、
+       小组件直接空白（这个坑本项目在分隔线上踩过一次）。
+    ⚠️ 坐标必须显式写全（`angle` + `startX/Y` + `endX/Y`）：
+       只写 `startColor`/`endColor` 的话默认 `angle=0`，方向能不能从左到右要看解析器，
+       Android 上这属于"能跑但别赌"的写法。
+       左 → 右 = 蓝色那端在左（`useLevel`/`centerX` 都不用，纯静态渐变）。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:type="linear"
+        android:angle="0"
+        android:startColor="@color/widget_bar_start"
+        android:centerColor="@color/widget_bar_mid"
+        android:endColor="@color/widget_bar_end"
+        android:startX="0"
+        android:startY="0"
+        android:endX="100"
+        android:endY="0" />
+    <corners android:radius="2dp" />
+</shape>

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    小组件 · **1×2**（用户 2026-09-26：「1*2 只做余额」）。
+
+    用户 2026-09-26 给了参考图：「**1*2 的余额做成这个样式，带进度条**」，
+    随后又点名「**去除胶囊，内容直接显示**」—— 所以这一版把中间那层胶囊底整个拿掉，
+    内容**直接坐在小组件自己的深色底上**：
+
+        (Paper)   A  16,457   V5  54.0%   [V]
+        ████████████████████████░░░░░░░░░░░░░░░░░░░░   ← 渐变进度条
+
+    ## 拿掉胶囊之后还在的东西
+
+     · **档位徽章那颗绿药丸留着**（`widget_tier_badge`）—— 用户说的是"胶囊"，
+       指的是外头那圈把整行内容包起来的底；参考图上 `Paper` 自己那颗绿框小药丸
+       是**内容的一部分**（档位标记），不是容器，所以照旧画。
+       如果你想连它一起去掉，说一声，改一行 `background` 就行。
+     · **进度条那一截长度**照旧写死 `@dimen/widget_bar_width`（参考图上条不铺满整块）。
+
+    ⚠️ 根布局**必须**有 `@id/widget_root` 这个 id：点击的 PendingIntent 绑在它上面
+    （见 `widgetLaunchIntent`）。少了它，`setOnClickPendingIntent` 会静默失效。
+    ⚠️ 只能用 RemoteViews **白名单**里的控件（LinearLayout / TextView / ImageView …）：
+        塞一个裸 `<View>` 进去会让整块布局**静默 inflate 失败**、小组件直接空白
+        （这个坑本项目踩过：原来那条分隔线就是用裸 `<View>` 写的）。
+        所以那条渐变进度条是 `ImageView` + `@drawable`，不是自定义控件、也不是 Canvas。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_background"
+    android:paddingStart="10dp"
+    android:paddingEnd="10dp">
+
+    <!-- ================= 内容行（没有胶囊底，直接铺在本体上） ================= -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <!-- 档位徽章（参考图里那颗写了 `Paper` 的绿框药丸）。
+             ⚠️ 宽度用 wrap_content：档名从 `Paper` 到 `Verified` 长短差一倍，
+                写死宽度不是裁字就是留一大块空。 -->
+        <TextView
+            android:id="@+id/widget_tier"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_tier_badge"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/widget_tier_text"
+            android:text="@string/widget_tier_placeholder" />
+
+        <!-- 余额左边那颗小字标（参考图上的 `A`） -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="4dp"
+            android:textSize="10sp"
+            android:maxLines="1"
+            android:textColor="@color/widget_text_dim"
+            android:text="@string/widget_anlas_mark" />
+
+        <!-- 余额数字（参考图里最显眼的那一串） -->
+        <TextView
+            android:id="@+id/widget_balance_value"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="@color/widget_text"
+            android:text="@string/widget_balance_placeholder" />
+
+        <TextView
+            android:id="@+id/widget_v5_caption"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="9dp"
+            android:textSize="10sp"
+            android:maxLines="1"
+            android:textColor="@color/widget_text_dim"
+            android:text="@string/widget_v5_caption" />
+
+        <TextView
+            android:id="@+id/widget_v5_percent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="5dp"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:textColor="@color/widget_percent"
+            android:text="" />
+
+        <!-- 把右边那颗 `V` 顶到最右（参考图里它贴着右边缘） -->
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- 机型标记（参考图右下角那颗描边小方块）。
+             ⚠️ 默认 `visibility="gone"`：那是"在跑 V5"的意思，
+                而小组件**看不到当前选的模型**（那是内存态），所以默认不画，
+                由代码在"有 V5 百分比快照"时才打开 —— 见 `BalanceOnlyWidgetProvider`。 -->
+        <TextView
+            android:id="@+id/widget_v5_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_v5_badge"
+            android:gravity="center"
+            android:paddingStart="5dp"
+            android:paddingEnd="5dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:textColor="@color/widget_text"
+            android:text="@string/widget_v5_badge"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <!-- 内容与进度条之间的缝 -->
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="5dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="@null" />
+
+    <!-- ================= 下面那条渐变进度条 ================= -->
+    <!-- 只画参考图那么长的一段，起点与内容左边缘对齐 -->
+    <ImageView
+        android:layout_width="@dimen/widget_bar_width"
+        android:layout_height="3dp"
+        android:src="@drawable/widget_bar_track"
+        android:scaleType="fitXY"
+        android:contentDescription="@null" />
+
+</LinearLayout>

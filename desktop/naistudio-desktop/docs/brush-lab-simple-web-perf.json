@@ -1,0 +1,26 @@
+{
+  "page": "brush-lab-simple.html",
+  "canvas": {
+    "w": 1000,
+    "h": 700
+  },
+  "size": 24,
+  "points": 21,
+  "dabUs": {
+    "mean": 8.000000044703484,
+    "p95": 90.00000059604645,
+    "max": 90.00000059604645
+  },
+  "repaintMs": {
+    "mean": 0.0899999996026357,
+    "p95": 0,
+    "max": 2.699999988079071
+  },
+  "rafMs": {
+    "mean": 6.9523809523809526,
+    "p95": 7.100000000000364,
+    "max": 7.100000000000364,
+    "n": 21
+  },
+  "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+}

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    **样式二：2×3，余额 + 统计**（用户 2026-09-26：「应该直接做两个样式，一个余额，一个统计加余额」）。
+
+    和样式一（`nai_balance_widget_info.xml`）**各是各的一份**：
+    两个 Provider、两份元数据、两个 `<receiver>` ⇒ 选择器里两条，互不影响。
+
+    内容：余额一行 + 右上角快照时间 + 分隔线 + **当月热点图** + 底下一行汇总。
+
+    ⚠️ `updatePeriodMillis="0"`：同上，数字由 App 侧主动推。
+
+    ## 尺寸：`span = ceil(dp / 80)` —— 从实测数据解出来的
+
+    拿**同一批添加的两个实例**（同一次网格配置）解方程：
+
+      · 声明 172dp 宽 -> 桌面 **3 格**；声明 264dp 宽 -> 桌面 **4 格**
+      · 声明  94dp 高 -> 桌面 **2 格**；声明 206dp 高 -> 桌面 **3 格**
+
+    反解出两边**同一个除数 80dp**：`span = ceil(dp / 80)`。
+    回代验证：172→3 ✓、264→4 ✓、242→4 ✓。
+
+    ## 本档 = 宽 3 格 × 高 2 格（用户 2026-09-26 定稿：「宽3高2，减小格子大小放进去」）
+
+      · 宽 3 格：取 **200dp**（区间 (160, 240] 的中值，离两边都远，最稳）
+      · 高 2 格：取 **160dp**（区间 (80, 160] 的**上界** —— 高度不够会把底部裁掉）
+
+    ⚠️ 高度特意取区间**上界**而不是中值：这档内容要塞「余额 + 月份 + 星期表头 +
+       最多 6 行日历」，160dp 是 2 格能给到的最大高度。
+       配套地，日历格子压到 **16dp**（见 `values/dimens_widget.xml` 的预算表），
+       整个版面正好铺满 160dp —— 再小就裁内容，再大就跳成 3 格。
+
+    ⚠️ `targetCellWidth/Height` 给支持新 API 的启动器看（本机 SDK 36，认这个）；
+       min* 是给老路径的兜底 —— 两边指向同一个格数。
+
+    ⚠️ **桌面上已经摆着的不会自己变**：`minSpan` 是**添加那一刻**写进数据库的 ——
+       必须**删掉重加**才会用新尺寸。
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="200dp"
+    android:minHeight="160dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:minResizeWidth="160dp"
+    android:minResizeHeight="80dp"
+    android:maxResizeWidth="400dp"
+    android:maxResizeHeight="400dp"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_balance_full"
+    android:previewLayout="@layout/widget_balance_full"
+    android:description="@string/widget_desc_balance_stats"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />

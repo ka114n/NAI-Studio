@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    1×2 小组件的尺寸（用户 2026-09-26：「1*2 的余额」。
+
+    ## 为什么是这两个数（**别再按网上的公式算了**）
+
+    网上那套 `73n - 16` 是**旧启动器**的经验值，这台机器（vivo `com.bbk.launcher2`）对不上：
+    同一台机器上实测下来是 **`格数 = ceil(dp / 80)`**
+    （`aapt2` 读到的格子宽就是 `all_widget_cell_width_port=80dp`）。
+
+    ⇒ 想要 **2 格宽**：`80 < dp <= 160` ⇒ 取中段 **120dp**（贴着上限容易因为取整掉格）；
+      想要 **1 格高**：`0 < dp <= 80` ⇒ 取 **40dp**。
+
+    ⚠️ 这两个数只决定"选择器里默认给多大"，真正规格是启动器那边记的；
+       改小改大之后**已经放在桌面上的那个小组件不会跟着变**，得删掉重新添加。
+-->
+<resources>
+    <!--
+        热点图一格的大小（1.1.116 口径：宽由 `columnWeight` 铺满、这里只定高）。
+        ⚠️ 和 `widget_heatmap_cell.xml` / `widget_week_label.xml` 是一套，别单独改。
+    -->
+    <dimen name="heat_cell_size">16dp</dimen>
+
+    <!-- 进度条长度：参考图上那条只铺到胶囊的一半多一点，不是铺满整块。 -->
+    <dimen name="widget_bar_width">120dp</dimen>
+</resources>

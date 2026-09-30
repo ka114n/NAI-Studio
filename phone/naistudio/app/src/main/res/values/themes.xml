@@ -1,0 +1,9 @@
+<resources>
+    <!-- 用系统 Material 主题作为基座，避免为 M0 引入 Material Components 依赖。 -->
+    <style name="Theme.NAIStudio" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

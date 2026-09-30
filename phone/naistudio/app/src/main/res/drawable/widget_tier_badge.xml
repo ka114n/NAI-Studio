@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    档位徽章（参考图里那颗写着 `Paper` 的绿色小药丸）。
+
+    `50%` 圆角在这里是安全的：这颗徽章的尺寸**只由它自己的字决定**（`wrap_content`），
+    不随桌面格子变，所以永远是标准药丸形。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_tier_bg" />
+    <corners android:radius="50dp" />
+</shape>

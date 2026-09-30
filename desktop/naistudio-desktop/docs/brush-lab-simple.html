@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>简单版：打开就能画（单层、无缩放、无旋转）· 笔刷实验室</title>
+<style>
+  :root{
+    --bg:#15161a; --panel:#1e2026; --panel2:#262931; --line:#33373f;
+    --fg:#e8e9ee; --dim:#9aa0ab; --accent:#7aa2f7; --warn:#e0af68; --ok:#9ece6a; --bad:#f7768e;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--fg);font:13px/1.5 -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;overflow:hidden}
+  #wrap{display:flex;flex-direction:column;height:100%}
+
+  /* ── 顶部一行：撤销 / 清空 / 保存 PNG / 导出参数 JSON ── */
+  #top{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  #top .ttl{font-size:14px;font-weight:600;letter-spacing:.4px}
+  #top .sub{color:var(--dim);font-size:11.5px}
+  #top .sub a{color:var(--accent)}
+  #top .sp{flex:1}
+  #top button{padding:6px 11px;font-size:12px;border-radius:7px}
+
+  /* ── 左侧参数面板 ── */
+  #main{flex:1;min-height:0;display:flex}
+  #panel{width:312px;min-width:312px;height:100%;overflow-y:auto;overflow-x:hidden;background:var(--panel);
+         border-right:1px solid var(--line);padding:10px 10px 12px}
+  #panel::-webkit-scrollbar{width:9px}
+  #panel::-webkit-scrollbar-thumb{background:#3a4150;border-radius:5px}
+  #panel .sub{color:var(--dim);font-size:11px;margin:0 0 8px;line-height:1.45}
+  #panel .sub a{color:var(--accent)}
+  .card{border:1px solid var(--line);border-radius:9px;margin:0 0 9px;padding:8px;background:var(--panel2)}
+  .card > .ct{color:var(--accent);font-size:11.5px;margin:-2px 0 6px;display:flex;justify-content:space-between;align-items:center}
+  .card > .ct .hint{color:var(--dim);font-size:10.5px}
+  .prm{margin-bottom:6px}
+  .prm .pl{display:flex;align-items:center;gap:5px}
+  .prm .pn{flex:1;font-size:11.5px;color:#d7dbe3;white-space:nowrap;overflow:hidden}
+  .prm .pnum{width:62px;background:#14161b;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:2px 4px;font-size:11.5px;text-align:right}
+  .prm .pu{font-size:10.5px;color:var(--dim);width:12px}
+  .prm .prow{display:flex;align-items:center;gap:6px;margin-top:2px}
+  .prm .pr{flex:1;min-width:0;accent-color:var(--accent);height:14px}
+  .prm .pv{width:44px;text-align:right;font-size:10.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .prm.indent{padding-left:9px;border-left:2px solid #3b4250}
+  .prm .tip{margin-top:2px}
+  .ckl{display:flex;align-items:center;gap:5px;flex:1;font-size:11.5px;color:#d7dbe3;cursor:pointer}
+  .tip{color:var(--dim);font-size:11px;margin-top:5px;line-height:1.45}
+  .kbd{background:#14161b;border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:10.5px}
+  button{background:#2f3440;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer;font-family:inherit}
+  button:hover{background:#3a4150}
+  button.primary{background:#33518f;border-color:#4a6fb5}
+  button.warn{background:#5a3a3a;border-color:#7a4a4a}
+
+  /* ── 右侧：一张画布（没有图层区 / 没有缩放平移 / 没有旋转） ── */
+  #stage{position:relative;flex:1;min-width:0;min-height:0;background:#0f1013;display:flex;align-items:center;justify-content:center;padding:14px;overflow:hidden}
+  #cv{max-width:100%;max-height:100%;background:#fff;border:1px solid #ffffff22;border-radius:2px;
+      box-shadow:0 6px 22px #000a;touch-action:none;cursor:crosshair;display:block}
+  #hud{position:absolute;left:10px;top:8px;right:10px;display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--fg);
+       background:#0009;border:1px solid #ffffff1a;border-radius:8px;padding:6px 10px;pointer-events:none;backdrop-filter:blur(3px)}
+  #hud b{color:var(--accent);font-weight:600}
+  #hud .nopen{color:var(--warn)}
+  #note{position:absolute;left:12px;bottom:10px;font-size:11.5px;color:#cfd4de;background:#0009;
+        border:1px solid #ffffff1a;border-radius:8px;padding:5px 10px;pointer-events:none;max-width:calc(100% - 24px)}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header id="top">
+    <span class="ttl">简单版：打开就能画（单层、无缩放、无旋转）</span>
+    <span class="sub">要<b>图层 / 缩放平移 / 画布尺寸 / 预设网格</b> → <a href="brush-lab.html">完整版 brush-lab.html</a>（相对链接，同一个 docs 目录 ✓）</span>
+    <span class="sp"></span>
+    <button id="b_undo">撤销</button>
+    <button id="b_clear" class="warn">清空</button>
+    <button id="b_png" class="primary">保存 PNG</button>
+    <button id="b_dump">导出参数 JSON</button>
+  </header>
+
+  <div id="main">
+    <aside id="panel">
+      <div class="sub">画笔引擎与参数名/范围照 <code>docs/44-*.md</code>（SAI 2 的 init/brshape|scatter），
+        和完整版 <a href="brush-lab.html">brush-lab.html</a> <b>同一套口径</b> ✓ —— 只是把图层 / 缩放平移 / 旋转 / 预设网格整套拿掉，保持短小。</div>
+
+      <div class="card">
+        <div class="ct"><span>画笔</span><span class="hint">打开就能画</span></div>
+        <div id="p_brush"></div>
+        <div class="tip">默认就是<b>画笔</b>+深灰（不是纯白）✓：鼠标左键按住直接拖 = 画一笔 ✓，不用先点任何东西。</div>
+      </div>
+
+      <div class="card">
+        <div class="ct"><span>压感 / 笔</span><span class="hint">鼠标 = 恒定 1</span></div>
+        <div id="p_pen"></div>
+        <div class="tip">数位板笔的 <code>pointerType</code> 才是 <code>pen</code>；鼠标/触摸读不到压感，压力恒等于 <b>1</b> ✓。</div>
+      </div>
+
+      <div class="card">
+        <div class="ct"><span>笔刷参数（SAI 工具层 + 资源层）</span><span class="hint">挑能用的那部分</span></div>
+        <div id="p_prm"></div>
+        <div class="tip"><b>间距 Spacing</b> 相对<strong>笔尖直径</strong>（SAI 口径 ✓），但步距上限被
+          <code>0.4 × 笔尖半径</code>夹住 ⇒ <b>调到 20% 以上不会再变稀</b>，只会更密、<strong>不可能成"一排点"</strong> ✓；
+          想要颗粒/点状感请用「散布 Scattering / 计数 Count」✓。HUD 的 <b>「步距」</b>格实时显示
+          <code>实际步距 ÷ 笔尖半径</code>（如 <code>0.40r</code>）✓。</div>
+      </div>
+
+      <div class="tip" style="margin:0 2px">
+        快捷键：<span class="kbd">Ctrl+Z</span> 撤销、<span class="kbd">E</span> 橡皮、<span class="kbd">[</span>/<span class="kbd">]</span> 改大小、
+        <span class="kbd">Delete</span> 清空。导出 PNG 就是<b>画布原始尺寸</b>（1000 × 700）✓。
+      </div>
+    </aside>
+
+    <main id="stage">
+      <canvas id="cv" width="1000" height="700"></canvas>
+      <div id="hud">
+        <span>设备：<b id="h_type">—</b></span>
+        <span>压力：<b id="h_p">—</b></span>
+        <span>倾斜：<b id="h_tilt">—</b></span>
+        <span>笔尖数：<b id="h_dabs">0</b></span>
+        <span>步距：<b id="h_step">—</b></span>
+        <span>半径：<b id="h_r">—</b> px</span>
+        <span class="nopen" id="h_warn"></span>
+      </div>
+      <div id="note">　</div>
+    </main>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   笔刷实验室 · **简单版**（2026-09-20）
+   用户口径：「第一版的网页明明挺好的现在不行」＋「取消旋转功能」✓
+   ⇒ 这一份就是"第一版那种"的：**单文件、零依赖、零外链，打开就能画** ✓
+      · 一个 canvas（1000 × 700，窗口里等比适配；导出 PNG = 这个原始尺寸 ✓）
+      · **没有图层、没有缩放平移、没有旋转** ✓
+      · 笔画 = 沿路径盖笔尖：`nibRadius()` / `dabStep()` / `stamp()` / `walkTo()` 与
+        **完整版 brush-lab.html 一字不改地同一套**（不是另写引擎 ✓，口径必须一致 ✓）
+      · 笔压 = PointerEvent.pressure（鼠标/触摸恒 1 ✓）；压感→大小（含最小大小% + 压感曲线）、压感→浓度 ✓
+      · 稳定器 / 画笔大小 / 颜色 / 橡皮 ✓
+      · 参数区 = SAI「工具层 + 资源层」里能用的那部分（保持简单，**不做**预设网格/分类胶囊/大小点阵 ✗）
+      · 顶部一行：撤销 / 清空 / 保存 PNG / 导出参数 JSON（version 2，和完整版同一套 key ✓）
+      · HUD 一行：设备 / 压力 / 倾斜（只显示、不用 ✓）/ 笔尖数 / **步距**（**没有旋转** ✗）
+   ── 与完整版共享的两条 2026-09-20 修复 ─────────────────────────────────────
+   ① **「画的线是一排点」的根因**：实时落笔必须走 `walkTo()`（沿这一小段路径按 Spacing 步进盖章 ✓），
+      绝不能在每个 pointermove 里只盖**一颗**笔尖 ✗——那样笔尖间距 = 指针事件间距，
+      鼠标稍快划过就断开成一排点 ✗。这一版从第一行起就是 `walkTo()` ✓。
+   ② `dabStep()` 的上限 `0.9r → 0.4r`（0.9r 只够"勉强搭上"，叠上 SizeJitter 就成珠链 ✗）✓。
+      预设/工具 Spacing 一律 ≤ 10%（默认也是 10% ✓），颗粒感靠 Scattering / Count ✓。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 0. 常量 / 默认参数（key 名与完整版、docs/44 完全一致 ✓） ─────────────── */
+const TILE = 128;                       // 纸纹/噪点贴图尺寸
+const CW = 1000, CH = 700;              // 画布原始尺寸（导出 PNG 就是这个尺寸 ✓）
+const UNDO_MAX = 10;                    // 撤销栈步数（简单版：一步 = 一张整画布快照 ✓）
+
+const DEFAULTS = {
+  // 应用层
+  color: "#1a1a1a", eraser: false, stabilize: 35,
+  pressureSize: true, pressureAlpha: false, pressureCurve: 1.0,
+  // 工具层（SAI 2「工具」面板）
+  size: 24, minSizePct: 15, density: 100, minDensity: 0,
+  spreadNoise: false, spreadNoiseStrength: 30,
+  paperOn: false, paperStrength: 35,
+  blending: 0, water: 0, colorStretch: 0,
+  /* 这三条简单版没给 UI（没有混色锁定 / 没有模糊笔），但**留在导出里**，
+     key 与完整版 TOOL_KEYS 一字不差 ⇒ Kotlin 侧一套 schema 读两份 JSON ✓ */
+  blendLock: false, blurPressureOn: true, blurPressure: 60,
+  blendMode: "normal", keepOpacity: false,
+  // 资源层 · SAI 通用（brshape）
+  Opacity: 100, AngleControl: 1, Angle: 0, AngleJitter: 0, Scaling: 100,
+  SizeJitter: 0, Spacing: 10, Scattering: 0, HighQualitySampling: 0,
+  // 资源层 · SAI 散布（scatter）
+  ShapeSize: 100, AbsoluteSize: 0, WxHRatio: 0, WxHJitter: 0,
+  Count: 1, CountJitter: 0, AllDirScattering: 0, GaussianDistribution: 0,
+  IntegerPosition: 0,
+  // 资源层 · SAI 颜色抖动（简单版不给 UI，默认全 0，但照样进导出 ✓）
+  ColJitter: 0, HueJitter: 0, SaturationJitter: 0, BrightnessJitter: 0, ApplyToEachShape: 0,
+};
+
+/* 导出 JSON 的三组 key：和完整版 / docs/44 同一套 ✓ */
+const RESOURCE_KEYS = ["Opacity","AngleControl","Angle","AngleJitter","Scaling","SizeJitter","Spacing",
+  "Scattering","HighQualitySampling","ShapeSize","AbsoluteSize","WxHRatio","WxHJitter","Count",
+  "CountJitter","AllDirScattering","GaussianDistribution","IntegerPosition","ColJitter","HueJitter",
+  "SaturationJitter","BrightnessJitter","ApplyToEachShape"];
+const TOOL_KEYS = ["size","minSizePct","density","minDensity","spreadNoise","spreadNoiseStrength",
+  "paperOn","paperStrength","blending","blendLock","water","colorStretch","keepOpacity",
+  "blurPressureOn","blurPressure","blendMode"];
+const APP_KEYS = ["color","eraser","stabilize","pressureSize","pressureAlpha","pressureCurve"];
+
+/* ── 1. 小工具函数 ────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+function gauss(){
+  let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function hexToHsl(hex){
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex); const n = m ? parseInt(m[1], 16) : 0x1a1a1a;
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0; if (d) { if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; if (h < 0) h += 360; }
+  const l = (mx + mn) / 2, s = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+  return { h: h, s: s, l: l };
+}
+function hslToRgb(h, s, l){
+  h = ((h % 360) + 360) % 360 / 360; s = clamp(s, 0, 1); l = clamp(l, 0, 1);
+  if (s === 0){ const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = (t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [Math.round(f(h + 1 / 3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1 / 3) * 255)];
+}
+
+/* ── 2. 参数状态 + 文档（**只有一个 canvas = 唯一的一层** ✓） ────────────── */
+const P = Object.assign({}, DEFAULTS);
+const cv = $("cv");
+const ctx = cv.getContext("2d", { willReadFrequently: true });
+cv.width = CW; cv.height = CH;
+/* 简单版的"文档" = 这一张位图（**没有 layers 数组、没有合成、没有缩放平移、没有旋转** ✓）。
+   它就是画布、也是混色/水分的采样源 —— 与完整版"单层时的合成结果"等价 ✓。 */
+const DOC = { w: CW, h: CH, cv: cv, ctx: ctx };
+/* ⚠ 完整版用 `compCtx` 当"合成层"，`sampleAvg()` 里有一句 `if (g === compCtx) ensureCompBox(...)`。
+   简单版没有合成层，这一行常量只是让那句判断**恒为 false** ✓ ——
+   于是 `sampleAvg()` 可以**一字不改**地搬过来（引擎口径不动 ✓）。 */
+const compCtx = null;
+
+/* ── 3. 纸纹 / 噪点贴图（程序生成，乘法作用在笔迹 alpha 上） ───────────── */
+const dabTile = document.createElement("canvas");
+const tileCtx = dabTile.getContext("2d");
+dabTile.width = TILE; dabTile.height = TILE;
+let tileVersion = 0;
+function hash2(x, y){
+  let n = (x | 0) * 374761393 + (y | 0) * 668265263;
+  n = (n ^ (n >> 13)) * 1274126177;
+  return ((n ^ (n >> 16)) >>> 0) / 4294967295;
+}
+/* 无缝 value noise：坐标归一化到 0..1，freq 格点环绕 */
+function vnoise(u, v, freq){
+  const x = u * freq, y = v * freq;
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const sx = xf * xf * (3 - 2 * xf), sy = yf * yf * (3 - 2 * yf);
+  const w = (i) => ((i % freq) + freq) % freq;
+  const a = hash2(w(xi), w(yi)), b = hash2(w(xi + 1), w(yi));
+  const c = hash2(w(xi), w(yi + 1)), d = hash2(w(xi + 1), w(yi + 1));
+  return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
+}
+function rebuildTile(){
+  const img = tileCtx.createImageData(TILE, TILE);
+  const d = img.data;
+  const ps = P.paperOn ? (P.paperStrength / 100) * 0.85 : 0;
+  const ss = P.spreadNoise ? (P.spreadNoiseStrength / 100) * 0.9 : 0;
+  const grain = new Uint8Array(TILE * TILE);          // 细颗粒只生成一次
+  for (let i = 0; i < grain.length; i++) grain[i] = (Math.random() * 256) | 0;
+  for (let y = 0; y < TILE; y++){
+    for (let x = 0; x < TILE; x++){
+      const u = x / TILE, v = y / TILE;
+      let tex = 1;
+      if (ps > 0){
+        // 纸纹 = 3 个八度的平滑噪声（纤维） + 一点细颗粒
+        const pn = vnoise(u, v, 4) * 0.55 + vnoise(u, v, 9) * 0.3 + vnoise(u, v, 21) * 0.15;
+        const fine = grain[y * TILE + x] / 255;
+        const paper = clamp(pn * 0.85 + fine * 0.15, 0, 1);
+        tex *= 1 - ps * (1 - paper);
+      }
+      if (ss > 0){
+        const sn = grain[((y * 7 + 13) * TILE + (x * 11 + 5)) % (TILE * TILE)] / 255;
+        tex *= 1 - ss * sn * sn;                       // 边缘"扩散和噪点"
+      }
+      const i4 = (y * TILE + x) * 4;
+      d[i4] = 0; d[i4 + 1] = 0; d[i4 + 2] = 0;
+      d[i4 + 3] = Math.round(clamp(tex, 0, 1) * 255);
+    }
+  }
+  tileCtx.putImageData(img, 0, 0);
+  tileVersion++;
+}
+function patternFor(g){
+  if (!g.__tilePat || g.__tileVer !== tileVersion){
+    g.__tilePat = g.createPattern(dabTile, "repeat");
+    g.__tileVer = tileVersion;
+  }
+  return g.__tilePat;
+}
+function needTexture(prm){
+  return (prm.paperOn && prm.paperStrength > 0) || (prm.spreadNoise && prm.spreadNoiseStrength > 0);
+}
+/* 贴纹理用的临时小画布（只增不减，避免每次重建） */
+const dabCv = document.createElement("canvas");
+const dabCtx = dabCv.getContext("2d", { willReadFrequently: false });
+dabCv.width = 32; dabCv.height = 32;
+
+/* ── 4. 采样：只取 dab 附近一小块的平均色（绝不全画布 getImageData） ───── */
+const SAMPLE_OUT = [0, 0, 0, 0];
+const MAX_SAMPLE_PX = 64;                      // 采样半宽上限（CSS px）
+function sampleAvg(g, st, cx, cy, half){
+  const cvs = g.canvas, d = st.dpr || 1;
+  let w = Math.round(half * 2 * d);
+  if (w < 2) w = 2;
+  let x0 = Math.round((cx - half) * d), y0 = Math.round((cy - half) * d);
+  x0 = clamp(x0, 0, Math.max(0, cvs.width - 2));
+  y0 = clamp(y0, 0, Math.max(0, cvs.height - 2));
+  w = Math.min(w, cvs.width - x0);
+  const h = Math.min(w, cvs.height - y0);
+  if (w < 2 || h < 2) return null;
+  if (g === compCtx) ensureCompBox(x0, y0, w, h);   // 简单版恒不成立（没有合成层 ✓）
+  const data = g.getImageData(x0, y0, w, h).data;
+  let r = 0, gg = 0, b = 0, a = 0, n = 0;
+  for (let i = 0; i < data.length; i += 4){
+    const al = data[i + 3] / 255;
+    r += data[i] * al; gg += data[i + 1] * al; b += data[i + 2] * al; a += al; n++;
+  }
+  if (a <= 0.001){ SAMPLE_OUT[0] = 255; SAMPLE_OUT[1] = 255; SAMPLE_OUT[2] = 255; SAMPLE_OUT[3] = 0; return SAMPLE_OUT; }
+  SAMPLE_OUT[0] = r / a; SAMPLE_OUT[1] = gg / a; SAMPLE_OUT[2] = b / a; SAMPLE_OUT[3] = a / n;
+  return SAMPLE_OUT;
+}
+/* 简单版没有"合成层"要重合成 ⇒ 这个名字保留成空函数，只为让 `sampleAvg()` 一字不改 ✓ */
+function ensureCompBox(){}
+
+/* ── 5. 落一个笔尖（核心 · 与完整版 brush-lab.html 同一套 ✓） ───────────── */
+let dabCount = 0;
+function makeStrokeState(dpr){
+  /* `stepR` = 算出 `step` 时用的那颗笔尖半径（**只给 HUD 的「步距 = ?r」用** ✓，不参与任何数值 ✓） */
+  return { dpr: dpr || 1, main: false, sampleCtx: null, last: null, carry: 0, step: 0, stepR: 0, dir: 0,
+           mix: [255, 255, 255], hasMix: false, alpha: 1, count: 0 };
+}
+/* texturedDab：把"纸纹/噪点贴图"按画布坐标对齐后与笔尖形状相乘，再上色 */
+function texturedDab(g, x, y, r, ratio, alpha, cr, cg, cb){
+  const size = Math.ceil(r * 2 * 1.15) + 4;
+  if (dabCv.width < size){ dabCv.width = size; dabCv.height = size; }
+  const s = Math.min(size, dabCv.width);
+  const g2 = dabCtx;
+  g2.setTransform(1, 0, 0, 1, 0, 0);
+  g2.globalCompositeOperation = "source-over";
+  g2.globalAlpha = 1;
+  g2.clearRect(0, 0, s, s);
+  const pat = patternFor(g2);
+  if (!pat) return false;
+  const ox = x - s / 2, oy = y - s / 2;
+  const tx = -(((ox % TILE) + TILE) % TILE), ty = -(((oy % TILE) + TILE) % TILE);
+  g2.save(); g2.translate(tx, ty);
+  g2.fillStyle = pat;
+  g2.fillRect(-tx, -ty, s, s);
+  g2.restore();
+  g2.globalCompositeOperation = "destination-in";     // 剪出笔尖形状
+  g2.beginPath();
+  g2.ellipse(s / 2, s / 2, Math.max(0.5, r), Math.max(0.5, r / ratio), 0, 0, Math.PI * 2);
+  g2.fillStyle = "#fff";
+  g2.fill();
+  g2.globalCompositeOperation = "source-in";          // 上色（保留纹理 alpha）
+  g2.fillStyle = "rgba(" + (cr | 0) + "," + (cg | 0) + "," + (cb | 0) + "," + clamp(alpha, 0, 1).toFixed(4) + ")";
+  g2.fillRect(0, 0, s, s);
+  g2.globalCompositeOperation = "source-over";
+  return true;
+}
+/* ── 笔尖半径 / 步距：**唯一口径**（`stamp()` 与 `walkTo()` 共用 ✓）──────────
+   病根（用户 2026-09-20 实机报的「**画出来是一排点**」✗，两处都在这）：
+   ① 原来上限是 `0.9 × 笔尖半径` —— 只保证"相邻笔尖勉强搭上"，
+      叠上 SizeJitter（这颗笔尖比基准小）就变成"珠子项链" ✗；
+   ② 步距一度用**基础半径**、笔尖却按**压感后的半径**画 ⇒ 轻按时步距 > 笔尖直径 ✗。
+   现在：① 半径只在这里算一次；② 步距按**这一颗笔尖自己的直径**算；
+        ③ 被"行进方向上的笔尖半径 × **0.4**"夹住（相邻笔尖至少重叠 ~60% ✓）——
+           这样 Spacing 调到 50%、压感把笔尖压多小，都**不可能**出现肉眼可见的断点 ✓。
+   ⚠️ `Spacing%` 仍然相对**笔尖直径**（SAI 口径 ✓），只是**上限被 0.4r 夹住** ⇒
+      往大调只会更密、**不可能成珠链** ✓。真想要"点状/散布"笔刷请用
+      **Scattering / Count / 散布类参数**（或以后加"允许断点"开关），**不靠大 Spacing** ✗。 */
+function nibRadius(prm, radius, pressure, sizeJit){
+  const jit = (sizeJit === undefined) ? 1 : sizeJit;
+  const base = Math.max(0.35, radius * (prm.Scaling / 100));
+  let r = base;
+  if (prm.pressureSize) r *= (prm.minSizePct / 100) + (1 - prm.minSizePct / 100) * Math.pow(pressure, prm.pressureCurve);
+  if (prm.AbsoluteSize === 1) r = Math.max(0.35, prm.ShapeSize * jit * 0.5);
+  else r *= jit;
+  return Math.max(0.35, r);
+}
+/* 这一颗笔尖该走多远才落下一颗（像素 ✓）：`Spacing%` 相对**它自己的直径** ✓ + **0.4r 护栏** ✓ */
+function dabStep(prm, st, radius, pressure, dirAngle){
+  const r = nibRadius(prm, radius, pressure);
+  if (st) st.stepR = r;                       // ← 只记数（给 HUD「步距 = ?r」），不影响任何数值 ✓
+  const bySpacing = r * 2 * (clamp(prm.Spacing, 1, 1000) / 100);
+  // 行进方向上的笔尖半径：圆 = r ✓；扁笔尖 = 椭圆在那条方向上的支撑半径 ✓
+  let ratio = 1;
+  if (prm.WxHRatio !== 0) ratio = prm.WxHRatio > 0 ? (100 / (100 - prm.WxHRatio)) : ((100 + prm.WxHRatio) / 100);
+  ratio = clamp(ratio, 0.05, 20);
+  const ry = r / ratio;
+  /* 角度控制只有两态：0 固定（用 Angle）/ 1 自动（跟随笔画方向 ✓）—— 本版**不做笔杆旋转** ✗ */
+  let ang = 0;
+  if (prm.AngleControl === 1) ang = dirAngle;
+  ang += prm.Angle * Math.PI / 180;
+  const rel = dirAngle - ang;
+  const along = 1 / Math.hypot(Math.cos(rel) / r, Math.sin(rel) / ry);
+  /* ★ 0.4 而不是 0.9：0.9r 只是"勉强搭上" ⇒ 叠上 SizeJitter 就是珠链 ✗ */
+  return Math.max(0.35, Math.min(bySpacing, along * 0.4));
+}
+function stamp(g, prm, st, x, y, radius, pressure, dirAngle){
+  const sizeJit = 1 + (prm.SizeJitter / 100) * rnd(-1, 1);
+  let r = nibRadius(prm, radius, pressure, sizeJit);
+  const spread = (prm.spreadNoise && prm.spreadNoiseStrength > 0) ? prm.spreadNoiseStrength / 100 : 0;
+  if (spread > 0) r *= 1 + spread * 0.4 * rnd(-1, 1);
+  r = Math.max(0.35, r);
+
+  // 角度：**只有两态** —— 0 固定（用 Angle）/ 1 自动（跟随笔画方向 ✓）；本版不做笔杆旋转 ✗
+  let ang;
+  if (prm.AngleControl === 1) ang = dirAngle;
+  else ang = 0;
+  ang += prm.Angle * Math.PI / 180 + (prm.AngleJitter / 100) * rnd(-Math.PI, Math.PI);
+
+  // W:H
+  let ratio = 1;
+  if (prm.WxHRatio !== 0) ratio = prm.WxHRatio > 0 ? (100 / (100 - prm.WxHRatio)) : ((100 + prm.WxHRatio) / 100);
+  ratio *= 1 + (prm.WxHJitter / 100) * rnd(-1, 1);
+  ratio = clamp(ratio, 0.05, 20);
+
+  // ── 工具层：浓度 / 水分量 / 混色 / 色延伸 ──
+  const erasing = prm.eraser === true;
+  let alpha = (prm.Opacity / 100) * (prm.density / 100);
+  if (prm.pressureAlpha) alpha *= (prm.minDensity / 100) + (1 - prm.minDensity / 100) * Math.pow(pressure, prm.pressureCurve);
+  const waterF = prm.water / 100;
+  alpha *= 1 - 0.55 * waterF;                      // 水分量越大 → 越淡
+  if (spread > 0) alpha *= 1 - spread * 0.45 * Math.random();
+  if (prm.keepOpacity && !erasing) alpha = 1;
+  alpha = clamp(alpha, 0, 1);
+
+  // ── 取样混色（只取 dab 附近 1~2 倍直径的小方块） ──
+  const wantMix = !erasing && (prm.blending > 0 || prm.water > 0 || prm.colorStretch > 0);
+  let mixR = 255, mixG = 255, mixB = 255, mixT = 0;
+  if (wantMix){
+    // 留 15% 本笔颜色：混色=100 时在纯白纸上也还看得见笔迹（不然采样全白 → 笔迹发白看不见）
+    mixT = clamp(prm.blending / 100 + 0.25 * waterF, 0, 1) * 0.85;
+    const half = clamp(r * (0.8 + 1.0 * waterF), 1, MAX_SAMPLE_PX);
+    const drag = r * (prm.colorStretch / 100) * 2.0;
+    const sx = x - Math.cos(dirAngle) * drag, sy = y - Math.sin(dirAngle) * drag;   // 沿笔画往后拖
+    const sg = st.sampleCtx || g;
+    const s = sampleAvg(sg, st, sx, sy, half);
+    if (s){
+      let sr = s[0], sg2 = s[1], sb = s[2], sa = s[3];
+      if (sa < 0.02){ sr = 255; sg2 = 255; sb = 255; }
+      if (prm.colorStretch > 0 && st.hasMix){
+        const k = 0.5 * (prm.colorStretch / 100);   // 把上一个笔尖的颜色继续带过去
+        sr = sr * (1 - k) + st.mix[0] * k;
+        sg2 = sg2 * (1 - k) + st.mix[1] * k;
+        sb = sb * (1 - k) + st.mix[2] * k;
+      }
+      mixR = sr; mixG = sg2; mixB = sb;
+    }
+  }
+
+  const hsl = hexToHsl(prm.color);
+  const n = Math.max(1, Math.round(prm.Count * (1 + (prm.CountJitter / 100) * rnd(-1, 1))));
+  const scatterAmp = r * (prm.Scattering / 100);
+  const useTex = needTexture(prm);
+  const op = erasing ? "destination-out" : "source-over";
+
+  g.save();
+  g.globalCompositeOperation = op;
+  for (let i = 0; i < n; i++){
+    let ox = 0, oy = 0;
+    if (scatterAmp > 0){
+      let mag, a;
+      if (prm.AllDirScattering === 1){ a = Math.random() * Math.PI * 2; mag = Math.random(); }
+      else { a = dirAngle + Math.PI / 2 + (Math.random() < 0.5 ? 0 : Math.PI); mag = Math.random(); }
+      if (prm.GaussianDistribution === 1) mag = Math.abs(gauss()) / 2.2;
+      mag = clamp(mag, 0, 1.6) * scatterAmp;
+      ox = Math.cos(a) * mag; oy = Math.sin(a) * mag;
+    }
+    if (spread > 0){ ox += (Math.random() - 0.5) * r * spread * 0.6; oy += (Math.random() - 0.5) * r * spread * 0.6; }
+    let px = x + ox, py = y + oy;
+    if (prm.IntegerPosition === 1){ px = Math.round(px); py = Math.round(py); }
+
+    let h = hsl.h, s = hsl.s, l = hsl.l;
+    const each = prm.ApplyToEachShape === 1;
+    if (each || i === 0){
+      if (prm.HueJitter) h += (prm.HueJitter / 100) * rnd(-180, 180);
+      if (prm.SaturationJitter) s += (prm.SaturationJitter / 100) * rnd(-1, 1);
+      if (prm.BrightnessJitter) l += (prm.BrightnessJitter / 100) * rnd(-0.5, 0.5);
+    }
+    let rgb = hslToRgb(h, s, l);
+    if (prm.ColJitter){                              // 前景↔背景（背景当白色）
+      const t = (prm.ColJitter / 100) * Math.random();
+      rgb = [255 * t + rgb[0] * (1 - t), 255 * t + rgb[1] * (1 - t), 255 * t + rgb[2] * (1 - t)];
+    }
+    let cr = rgb[0], cg = rgb[1], cb = rgb[2];
+    if (wantMix && mixT > 0){
+      cr = cr * (1 - mixT) + mixR * mixT;
+      cg = cg * (1 - mixT) + mixG * mixT;
+      cb = cb * (1 - mixT) + mixB * mixT;
+    }
+
+    if (useTex && !erasing && texturedDab(g, px, py, r, ratio, alpha, cr, cg, cb)){
+      g.save(); g.translate(px, py); g.rotate(ang);
+      const s2 = Math.min(dabCv.width, Math.ceil(r * 2 * 1.15) + 4);
+      g.drawImage(dabCv, -s2 / 2, -s2 / 2, s2, s2);
+      g.restore();
+    } else {
+      g.save();
+      g.translate(px, py);
+      g.rotate(ang);
+      g.beginPath();
+      g.ellipse(0, 0, r, r / ratio, 0, 0, Math.PI * 2);
+      g.fillStyle = "rgba(" + (cr | 0) + "," + (cg | 0) + "," + (cb | 0) + "," + alpha.toFixed(4) + ")";
+      g.fill();
+      g.restore();
+    }
+    if (wantMix){ st.mix[0] = cr; st.mix[1] = cg; st.mix[2] = cb; st.hasMix = true; }
+    st.count++;
+  }
+  g.restore();
+  dabCount = st.count;
+  if (st.main){
+    $("h_dabs").textContent = String(dabCount);
+    /* HUD「步距」：显示**实际步距 ÷ 这一颗笔尖的半径**（例如 `0.40r` ✓）——
+       用户一眼就能看出"是不是间距在作怪"✓。只读 `st`，不改任何数值 ✓ */
+    const hs = $("h_step");
+    if (hs) hs.textContent = (st.stepR > 0) ? ((st.step / st.stepR).toFixed(2) + "r") : "—";
+  }
+}
+
+/* ── 6. 沿路径按 Spacing 盖章（距离累加器 carry）· 与完整版一字不改 ✓ ─────
+   ★★「画的线是一排点」的根因就在这里 ★★
+   实时落笔（pointerdown/move）**必须**调 `walkTo()`：它沿这一段路径按 `dabStep()` 步进盖章，
+   `st.last` 记"**上一颗笔尖的落点**"、`st.carry` 记"上一颗之后走了多远" ✓。
+   如果每个 pointermove 只调一次 `stamp()`（= 只盖一颗 ✗），笔尖间距就**等于指针事件间距** ——
+   鼠标稍快划过时事件间距远大于笔尖直径 ⇒ **一排断开的点** ✗（用户 2026-09-20 实机报的 ✓）。
+   `carry` 与 `st.step` 是**同口径**的：carry 记"上一颗笔尖之后走了多远"，
+   st.step 记"上一颗笔尖那一档的步距" ⇒ 两者相减才是"还差多远落下一颗" ✓。 */
+function walkTo(g, prm, st, x, y, radius, pressure, dabFn){
+  if (!st.last){
+    dabFn(g, prm, st, x, y, radius, pressure, st.dir || 0);
+    st.last = { x: x, y: y }; st.carry = 0;
+    st.step = (dabFn === blurDab) ? Math.max(2, radius * 0.6) : dabStep(prm, st, radius, pressure, st.dir || 0);
+    return;
+  }
+  const dx = x - st.last.x, dy = y - st.last.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.05) return;
+  const dir = Math.atan2(dy, dx);
+  st.dir = dir;
+  if (dabFn === blurDab){                       // 模糊：步距单独放宽，别一个像素糊一次 ✓（照旧 ✓）
+    const step = Math.max(2, radius * 0.6);
+    let next = Math.max(0.35, step - st.carry);
+    let last = -1;
+    while (next <= dist){
+      const k = next / dist;
+      dabFn(g, prm, st, st.last.x + dx * k, st.last.y + dy * k, radius, pressure, dir);
+      last = next;
+      next += step;
+    }
+    st.carry = last < 0 ? st.carry + dist : dist - last;
+    if (st.carry >= step) st.carry = st.carry % step;
+    st.last = { x: x, y: y };
+    return;
+  }
+  // 画笔 / 橡皮：**每一颗笔尖的步距都由它自己那一点的半径算** ✓（口径见 `dabStep()` ✓）
+  let step = st.step || dabStep(prm, st, radius, pressure, dir);
+  let next = Math.max(0.35, step - st.carry);
+  let lastStampAt = -1;
+  while (next <= dist){
+    const k = next / dist;
+    const px = st.last.x + dx * k, py = st.last.y + dy * k;
+    dabFn(g, prm, st, px, py, radius, pressure, dir);
+    lastStampAt = next;
+    step = dabStep(prm, st, radius, pressure, dir);   // ★ 这一颗的半径 ⇒ 下一颗的步距 ✓
+    next += step;
+  }
+  st.step = step;
+  st.carry = lastStampAt < 0 ? st.carry + dist : dist - lastStampAt;
+  if (st.carry >= step) st.carry = st.carry % step;
+  st.last = { x: x, y: y };
+}
+/* 简单版**没有模糊笔**：这个函数永远不会被调用 —— 留着它只是为了让**一字不改搬过来的**
+   `walkTo()` 里那句 `dabFn === blurDab` 判断仍然成立（结构/口径都不动 ✓）。 */
+function blurDab(){}
+
+/* ── 7. UI 构建（参数控件；刻意只有"滑杆 / 勾选 / 下拉 / 颜色"四种 ✓） ─── */
+const noteEl = $("note");
+function note(msg){ noteEl.textContent = msg; }
+const CTRLS = [];
+function addSlider(spec){
+  const host = spec.host;
+  const row = document.createElement("div");
+  row.className = "prm" + (spec.indent ? " indent" : "");
+  row.innerHTML =
+    '<div class="pl">' +
+      '<span class="pn">' + spec.label + '</span>' +
+      '<input type="number" class="pnum" id="num_' + spec.key + '" min="' + spec.min + '" max="' + spec.max + '" step="' + spec.step + '">' +
+      '<span class="pu">' + (spec.unit || "") + '</span>' +
+    '</div>' +
+    '<div class="prow"><input type="range" class="pr" id="rng_' + spec.key + '" min="' + spec.min + '" max="' + spec.max + '" step="' + spec.step + '">' +
+    '<span class="pv" id="v_' + spec.key + '"></span></div>';
+  host.appendChild(row);
+  const o = {
+    key: spec.key, min: spec.min, max: spec.max, unit: spec.unit || "",
+    range: row.querySelector("#rng_" + spec.key), num: row.querySelector("#num_" + spec.key),
+    val: row.querySelector("#v_" + spec.key), chk: null, sel: null, color: null, fmt: spec.fmt || null,
+  };
+  CTRLS.push(o);
+  const set = (v, fromNum) => {
+    let nv = Number(v);
+    if (!isFinite(nv)) return;
+    nv = clamp(nv, o.min, o.max);
+    P[o.key] = nv;
+    o.range.value = String(nv);
+    if (!fromNum) o.num.value = String(nv);
+    o.val.textContent = o.fmt ? o.fmt(nv) : (Math.round(nv * 100) / 100 + o.unit);
+    onParamChanged(o.key);
+  };
+  o.set = set;
+  o.range.addEventListener("input", () => set(o.range.value, false));
+  o.num.addEventListener("input", () => {
+    const raw = o.num.value;
+    if (raw === "" || raw === "-" || raw === ".") return;
+    set(raw, true);
+  });
+  o.num.addEventListener("change", () => { o.num.value = String(P[o.key]); });
+  return o;
+}
+function addCheck(spec){
+  const host = spec.host;
+  const row = document.createElement("div");
+  row.className = "prm" + (spec.indent ? " indent" : "");
+  row.innerHTML = '<div class="pl"><label class="ckl"><input type="checkbox" id="ck_' + spec.key + '">' + spec.label + '</label></div>' +
+    (spec.note ? '<div class="tip">' + spec.note + '</div>' : '');
+  host.appendChild(row);
+  const o = { key: spec.key, chk: row.querySelector("#ck_" + spec.key), range: null, num: null, val: null, sel: null, color: null, numeric: !!spec.numeric };
+  CTRLS.push(o);
+  /* `numeric: true` → 引擎里读的是 `=== 1` 的 0/1 参数（全方向散布 / 高斯分布 ✓），
+     导出 JSON 里也就一直是数字（和完整版同一口径 ✓），不会被勾选框写成 true/false ✗ */
+  o.chk.addEventListener("change", () => {
+    P[o.key] = o.numeric ? (o.chk.checked ? 1 : 0) : o.chk.checked;
+    onParamChanged(o.key);
+  });
+  return o;
+}
+function addSelect(spec){
+  const host = spec.host;
+  const row = document.createElement("div");
+  row.className = "prm";
+  row.innerHTML = '<div class="pl"><span class="pn">' + spec.label + '</span></div>' +
+    '<div class="prow"><select id="sel_' + spec.key + '" style="flex:1;background:#14161b;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:11.5px">' +
+    spec.options + '</select></div>' +
+    (spec.note ? '<div class="tip">' + spec.note + '</div>' : '');
+  host.appendChild(row);
+  const o = { key: spec.key, sel: row.querySelector("#sel_" + spec.key), range: null, num: null, val: null, chk: null, color: null };
+  CTRLS.push(o);
+  o.sel.addEventListener("change", () => { P[o.key] = Number(o.sel.value); onParamChanged(o.key); });
+  return o;
+}
+function addColor(spec){
+  const host = spec.host;
+  const row = document.createElement("div");
+  row.className = "prm";
+  row.innerHTML = '<div class="pl"><span class="pn">' + spec.label + '</span>' +
+    '<input type="color" id="' + spec.key + '" style="flex:0 0 60px;height:22px;background:#14161b;border:1px solid var(--line);border-radius:5px"></div>';
+  host.appendChild(row);
+  const o = { key: spec.key, color: row.querySelector("#" + spec.key), range: null, num: null, val: null, chk: null, sel: null };
+  CTRLS.push(o);
+  o.color.addEventListener("input", () => { P[o.key] = o.color.value; onParamChanged(o.key); });
+  return o;
+}
+
+/* 画笔 */
+const brushHost = $("p_brush");
+addSlider({ host: brushHost, key: "size", label: "画笔大小", min: 0.7, max: 5000, step: 0.1, unit: "px",
+  fmt: (v) => (Math.round(v * 10) / 10) + " px" });
+addColor({ host: brushHost, key: "color", label: "颜色" });
+addCheck({ host: brushHost, key: "eraser", label: "橡皮（destination-out，真擦 ✓）" });
+addSlider({ host: brushHost, key: "stabilize", label: "稳定器", min: 0, max: 95, step: 1, unit: "%" });
+/* 角度控制**只有两态**（2026-09-20 用户口径「取消旋转功能」✓）：
+   0 固定 / 1 自动（跟随笔画方向）—— SAI 的「2 笔杆方向」是给**笔杆旋转 twist** 用的，
+   旋转整套拿掉后它没有输入源、只会空转 ✗ ⇒ 本版明确不做 ✓。
+   👉 Kotlin 那边 `ComicModeScreen` 的 `nibRatio / angleControl` **这一批不动**（只改网页 ✓），
+      等这批验收完再对齐成 0/1 两态即可 ✓。 */
+addSelect({ host: brushHost, key: "AngleControl", label: "角度控制 AngleControl",
+  options: '<option value="0">0 固定（用 Angle）</option><option value="1">1 自动（跟随笔画方向）</option>',
+  note: "只有两态：0 固定 / 1 自动。SAI 的「2 笔杆方向」＝笔杆旋转，本版不做 ✗。" });
+
+/* 压感 / 笔 */
+const penHost = $("p_pen");
+addCheck({ host: penHost, key: "pressureSize", label: "压感→大小" });
+addSlider({ host: penHost, key: "minSizePct", label: "最小大小", min: 0, max: 100, step: 1, unit: "%", indent: true });
+addCheck({ host: penHost, key: "pressureAlpha", label: "压感→浓度" });
+addSlider({ host: penHost, key: "pressureCurve", label: "压感曲线", min: 0.3, max: 3, step: 0.05, unit: "" });
+
+/* 笔刷参数（SAI 工具层 + 资源层；顺序照需求：浓度→最小浓度→间距→散布→大小抖动→角度抖动→
+   计数→计数抖动→全方向散布→高斯分布→画用纸→扩散和噪点→混色→水分量→色延伸 ✓） */
+const prmHost = $("p_prm");
+addSlider({ host: prmHost, key: "density", label: "浓度（画笔浓度）", min: 0, max: 100, step: 1, unit: "" });
+addSlider({ host: prmHost, key: "minDensity", label: "最小浓度", min: 0, max: 100, step: 1, unit: "%", indent: true });
+addSlider({ host: prmHost, key: "Spacing", label: "间距 Spacing", min: 1, max: 200, step: 1, unit: "%" });
+addSlider({ host: prmHost, key: "Scattering", label: "散布 Scattering", min: 0, max: 300, step: 1, unit: "%" });
+addSlider({ host: prmHost, key: "SizeJitter", label: "大小抖动 SizeJitter", min: 0, max: 100, step: 1, unit: "%" });
+addSlider({ host: prmHost, key: "AngleJitter", label: "角度抖动 AngleJitter", min: 0, max: 100, step: 1, unit: "%" });
+addSlider({ host: prmHost, key: "Count", label: "计数 Count", min: 1, max: 20, step: 1, unit: "" });
+addSlider({ host: prmHost, key: "CountJitter", label: "计数抖动 CountJitter", min: 0, max: 100, step: 1, unit: "%" });
+addCheck({ host: prmHost, key: "AllDirScattering", label: "全方向散布 AllDir", numeric: true });
+addCheck({ host: prmHost, key: "GaussianDistribution", label: "高斯分布 Gaussian", numeric: true });
+addCheck({ host: prmHost, key: "paperOn", label: "画用纸（纸纹）" });
+addSlider({ host: prmHost, key: "paperStrength", label: "画用纸强度", min: 0, max: 100, step: 1, unit: "%", indent: true });
+addCheck({ host: prmHost, key: "spreadNoise", label: "扩散和噪点" });
+addSlider({ host: prmHost, key: "spreadNoiseStrength", label: "扩散和噪点强度", min: 0, max: 100, step: 1, unit: "%", indent: true });
+addSlider({ host: prmHost, key: "blending", label: "混色", min: 0, max: 100, step: 1, unit: "" });
+addSlider({ host: prmHost, key: "water", label: "水分量", min: 0, max: 100, step: 1, unit: "" });
+addSlider({ host: prmHost, key: "colorStretch", label: "色延伸", min: 0, max: 100, step: 1, unit: "" });
+
+/* ── 8. syncUI / 参数变化 ─────────────────────────────────────────────── */
+function onParamChanged(key){
+  if (key === "paperOn" || key === "paperStrength" || key === "spreadNoise" || key === "spreadNoiseStrength") rebuildTile();
+  if (key === "eraser") note(P.eraser ? "橡皮：开着（画下去是 destination-out，真擦 ✓）" : "橡皮：关了（现在是画笔 ✓）");
+}
+function syncUI(){
+  for (const o of CTRLS){
+    if (o.range){
+      const v = Number(P[o.key]);
+      o.range.value = String(v);
+      o.num.value = String(Math.round(v * 100) / 100);
+      o.val.textContent = o.fmt ? o.fmt(v) : (Math.round(v * 100) / 100 + o.unit);
+    } else if (o.chk){
+      o.chk.checked = o.numeric ? (Number(P[o.key]) === 1) : !!P[o.key];
+    } else if (o.sel){
+      o.sel.value = String(P[o.key]);
+    } else if (o.color){
+      o.color.value = P[o.key];
+    }
+  }
+}
+
+/* ── 9. 指针事件（笔压 / 稳定器 / 每笔撤销）· **没有旋转** ✗ ───────────── */
+let drawing = false, smooth = null, strokeBefore = null;
+let strokeState = makeStrokeState(1);
+/* 复用同一个对象，避免每次指针事件都新建参数副本 */
+const LIVE_PRM = {};
+
+function pressureOf(e){
+  if (e.pointerType === "pen") return clamp(e.pressure > 0 ? e.pressure : 0.5, 0.01, 1);
+  if (e.pointerType === "touch") return clamp(e.pressure > 0 ? e.pressure : 0.5, 0.01, 1);
+  return 1;                                  // 鼠标 = 恒定 1 ✓
+}
+/* 视图坐标：pointer 的 clientX/Y → 画布 CSS px → **画布原始像素**（只有等比缩放，没有平移/旋转 ✓） */
+function localXY(e){
+  const r = cv.getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+function docXY(e){
+  const r = cv.getBoundingClientRect();
+  const k = (r.width || DOC.w) / DOC.w;
+  const p = localXY(e);
+  return [p[0] / k, p[1] / k];
+}
+/* `docXY()` 的逆运算（自检 / 调试用 ✓） */
+function docToScreen(dx, dy){
+  const r = cv.getBoundingClientRect();
+  const k = (r.width || DOC.w) / DOC.w;
+  return [dx * k + r.left, dy * k + r.top];
+}
+/* HUD 一行（设备 / 压力 / 倾斜只显示 / 半径）；笔尖数与步距由 `stamp()` 里刷 ✓ */
+function showPen(e, p, r){
+  $("h_type").textContent = e.pointerType === "pen" ? "数位板笔 ✓" : (e.pointerType === "touch" ? "触摸" : "鼠标 ✗");
+  $("h_p").textContent = p.toFixed(2);
+  /* 倾斜**只显示**（tiltX/tiltY）：本版不拿它算任何东西（旋转已取消 ✓，AngleControl 只剩 0/1 ✓） */
+  $("h_tilt").textContent = (e.tiltX || 0) + "° / " + (e.tiltY || 0) + "°";
+  $("h_r").textContent = r.toFixed(1);
+  $("h_warn").textContent = (e.pointerType === "pen") ? "" : "（鼠标/触摸读不到压感：压力恒等于 1 ✓ 插笔再试）";
+}
+/* ★ 实时落笔 = **沿这一段路径走位盖章**（不是"一个事件一颗" ✗） —— 见 `walkTo()` 上面的注释 */
+function liveDab(st, x, y, radius, pressure){
+  for (const k in P) LIVE_PRM[k] = P[k];
+  LIVE_PRM.eraser = !!P.eraser;
+  walkTo(ctx, LIVE_PRM, st, x, y, radius, pressure, stamp);
+}
+cv.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 && e.pointerType === "mouse") return;
+  const p = docXY(e);
+  drawing = true; smooth = { x: p[0], y: p[1] };
+  dabCount = 0;
+  /* 撤销：一步 = 这一笔之前的**整张位图**（简单版就这么直接 ✓） */
+  strokeBefore = ctx.getImageData(0, 0, DOC.w, DOC.h);
+  strokeState = makeStrokeState(1);
+  strokeState.main = true;
+  strokeState.sampleCtx = null;              // 采样源就是这张画布自己（单层 = 合成结果 ✓）
+  strokeState.last = null; strokeState.carry = 0; strokeState.dir = 0;
+  const r = P.size / 2, pv = pressureOf(e);
+  /* 先把"这一档步距"算出来（walkTo 稍后会重算一遍，数值完全一致 ✓）——
+     这样 HUD 的「步距 = ?r」从**第一颗笔尖**起就是真的，不会闪一下 0.00r ✓ */
+  strokeState.step = dabStep(P, strokeState, r, pv, 0);
+  liveDab(strokeState, smooth.x, smooth.y, r, pv);
+  showPen(e, pv, r);
+  e.preventDefault();
+});
+cv.addEventListener("pointermove", (e) => {
+  const pv = pressureOf(e), r = P.size / 2;
+  if (!drawing){ showPen(e, pv, r); return; }
+  const k = 1 - (P.stabilize / 100);
+  const evs = (typeof e.getCoalescedEvents === "function" && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+  for (const ev of evs){
+    const dp = docXY(ev);
+    smooth.x += (dp[0] - smooth.x) * k;
+    smooth.y += (dp[1] - smooth.y) * k;
+    const pp = pressureOf(ev);
+    liveDab(strokeState, smooth.x, smooth.y, r, pp);      // ← 每一段都走 walkTo ✓
+    showPen(ev, pp, r);
+  }
+  e.preventDefault();
+});
+function endStroke(e){
+  if (!drawing) return;
+  drawing = false;
+  if (strokeBefore && dabCount > 0){
+    undoStack.push(strokeBefore);
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    note("一笔落下（" + dabCount + " 颗笔尖）· 撤销栈 " + undoStack.length + " 步 ✓");
+  }
+  strokeBefore = null;
+  strokeState.last = null; strokeState.carry = 0;
+  if (e && e.clientX !== undefined) showPen(e, pressureOf(e), P.size / 2);
+}
+cv.addEventListener("pointerup", endStroke);
+cv.addEventListener("pointercancel", endStroke);
+cv.addEventListener("pointerleave", (e) => { endStroke(e); });
+cv.addEventListener("contextmenu", (e) => e.preventDefault());
+
+/* ── 10. 撤销 / 清空 / 保存 PNG / 导出参数 JSON ───────────────────────── */
+const undoStack = [];
+function doUndo(){
+  const img = undoStack.pop();
+  if (!img){ note("没有可撤销的了（撤销栈空）"); return; }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+  ctx.putImageData(img, 0, 0);
+  note("已撤销一步（还剩 " + undoStack.length + " 步）");
+}
+function clearCanvas(){
+  const before = ctx.getImageData(0, 0, DOC.w, DOC.h);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, DOC.w, DOC.h);
+  undoStack.push(before);
+  if (undoStack.length > UNDO_MAX) undoStack.shift();
+  note("已清空画布（Ctrl+Z / 「撤销」能回来 ✓）");
+}
+/* 保存 PNG：**按画布原始尺寸**导出（1000 × 700，不是屏幕尺寸 ✓），带白纸底 */
+function savePng(){
+  const out = document.createElement("canvas");
+  out.width = DOC.w; out.height = DOC.h;
+  const g = out.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.globalAlpha = 1;
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, DOC.w, DOC.h);
+  g.drawImage(DOC.cv, 0, 0);
+  const name = "brush-lab-simple-" + DOC.w + "x" + DOC.h + ".png";
+  const done = (url) => {
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 5000);
+    note("已导出 " + name + "（画布原始尺寸 " + DOC.w + "×" + DOC.h + " ✓）");
+  };
+  if (typeof out.toBlob === "function"){
+    out.toBlob((b) => { if (b) done(URL.createObjectURL(b)); else done(out.toDataURL("image/png")); }, "image/png");
+  } else done(out.toDataURL("image/png"));
+}
+function buildExport(){
+  const resource = {}, tool = {}, app = {};
+  for (const k of RESOURCE_KEYS) resource[k] = P[k];
+  for (const k of TOOL_KEYS) tool[k] = P[k];
+  for (const k of APP_KEYS) app[k] = P[k];
+  return {
+    version: 2,
+    note: "笔刷参数（SAI 2 命名）· docs/brush-lab-simple.html 导出（简单版：单层 · 无缩放 · 无旋转）· resource=资源层(init/*.ini) / tool=工具层(工具面板) / app=应用程序侧",
+    exportedAt: new Date().toISOString(),
+    ui: { page: "simple", toolId: "brush", toolName: "画笔", variant: null },
+    canvas: { w: DOC.w, h: DOC.h, zoomPct: 100,
+              layers: [{ index: 0, name: "单层", visible: true, opacity: 100 }] },
+    resource: resource,
+    tool: tool,
+    app: app,
+    params: Object.assign({}, P),        // 扁平副本，方便肉眼比对
+    docs: "docs/44-方案-笔刷引擎与SAI参数清单.md",
+  };
+}
+$("b_undo").addEventListener("click", doUndo);
+$("b_clear").addEventListener("click", clearCanvas);
+$("b_png").addEventListener("click", savePng);
+$("b_dump").addEventListener("click", async () => {
+  const text = JSON.stringify(buildExport(), null, 2);
+  try { await navigator.clipboard.writeText(text); } catch (_) {}
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "brush-params-simple.json"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  note("参数已复制到剪贴板并下载 brush-params-simple.json（version 2）✓");
+});
+window.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName) ? e.target.tagName : "";
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+  const k = (e.key || "").toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === "z"){ e.preventDefault(); doUndo(); return; }
+  if (e.key === "e"){ P.eraser = !P.eraser; syncUI(); onParamChanged("eraser"); }
+  if (e.key === "["){ setSize(P.size - 4); }
+  if (e.key === "]"){ setSize(P.size + 4); }
+  if (e.key === "Delete"){ clearCanvas(); }
+});
+function setSize(v){
+  const o = CTRLS.find((c) => c.key === "size");
+  P.size = clamp(v, 0.7, 5000);
+  if (o && o.set) o.set(P.size, false);
+  onParamChanged("size");
+}
+window.addEventListener("error", (ev) => {
+  const el = $("h_warn");
+  if (el) el.textContent = "脚本出错：" + (ev.message || "unknown") + "（把这句话发我即可）";
+});
+
+/* ── 11. 启动：**打开就能画**的自检 ✓ ─────────────────────────────────── */
+function selfCheck(){
+  const fixed = [];
+  if (!DOC.cv || DOC.w < 16 || DOC.h < 16){ DOC.w = CW; DOC.h = CH; DOC.cv.width = CW; DOC.cv.height = CH; fixed.push("重建画布"); }
+  const c0 = String(P.color || "").toLowerCase().replace(/\s/g, "");
+  if (c0 === "#ffffff" || c0 === "#fff" || c0 === "white"){
+    P.color = DEFAULTS.color;
+    const ci = $("color"); if (ci) ci.value = P.color;
+    fixed.push("颜色从纯白改回 " + P.color);
+  }
+  if (!(P.size > 0)){ P.size = DEFAULTS.size; fixed.push("画笔大小回默认"); }
+  if (P.Spacing > 20){ P.Spacing = 10; fixed.push("Spacing 压到 10%（>20% 会被 0.4r 护栏夹住 ✓）"); }
+  return fixed;
+}
+rebuildTile();
+syncUI();
+const scFix = selfCheck();
+syncUI();
+note("就绪：打开就能画（单层 · 无缩放 · 无旋转）✓ —— 直接在画布上按住左键拖动即可" +
+     (scFix.length ? "｜自检已修：" + scFix.join("、") : "｜自检通过 ✓"));
+</script>
+</body>
+</html>

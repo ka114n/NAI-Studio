@@ -1,0 +1,36 @@
+<resources>
+    <string name="app_name">NAI Studio</string>
+
+    <!-- ==== 桌面小组件（用户 2026-09-26：**两个样式**，一个余额、一个统计加余额）====
+         ⚠️ 文案**写死在资源里**（不像 App 里那样走 `RuntimeText` i18n）：
+            小组件跑在 systemui 进程、由启动器 inflate，**拿不到 App 那套运行时文案表**。
+            这是 Android 小组件的通病。所以中英各一份：本文件=中文，`values-en/`=英文。 -->
+    <string name="widget_label_balance">NAI Studio 余额</string>
+    <string name="widget_label_balance_stats">NAI Studio 余额 + 统计</string>
+    <string name="widget_desc_balance">只显示 NovelAI 余额（一行）</string>
+    <string name="widget_desc_balance_stats">显示 NovelAI 余额，以及今日 / 本月出图与消耗点数</string>
+
+    <string name="widget_balance_label">余额</string>
+    <!-- 还没拿到过快照时的占位（**不是 0** —— 0 会被读成"余额用光了"） -->
+    <string name="widget_balance_placeholder">—</string>
+
+    <!-- ==== 1×2 余额条（用户 2026-09-26 参考图：「做成这个样式，带进度条」）==== -->
+    <!-- 余额左边那颗小字标（参考图上的 `A`，是 Anlas 的记号） -->
+    <string name="widget_anlas_mark">A</string>
+    <!-- V5 剩余额度那一段的说明字（参考图上的 `VS`，这里按本 App 的叫法写 `V5`） -->
+    <string name="widget_v5_caption">V5</string>
+    <!-- V5 剩余百分比（`54.0%` 那种写法，保留一位小数和参考图一致） -->
+    <string name="widget_v5_percent_format">%1$s%%</string>
+    <!-- 右下角那颗机型标记 -->
+    <string name="widget_v5_badge">V</string>
+    <!-- 还没拿到过档位时的占位（那时徽章整颗不画，这里只是布局里的默认文案） -->
+    <string name="widget_tier_placeholder">—</string>
+
+    <!-- 热点图底下那一行汇总（热点图只表达"哪几天跑了"，数字仍要看得见） -->
+    <string name="widget_heat_placeholder">今日 0 · 本月 0 · 消耗 0</string>
+    <string name="widget_heat_note">今日 %1$d · 本月 %2$d 张 · 消耗 %3$d 点</string>
+
+    <!-- 日历：月份标题 + 星期表头（周一在最左，和日历一致） -->
+    <string name="widget_month_placeholder">—</string>
+    <string name="widget_week_header">一 二 三 四 五 六 日</string>
+</resources>

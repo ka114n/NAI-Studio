@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    小组件的配色（**固定一套，不跟 App 主题走** —— 理由见 `widget_background.xml`）。
+
+    深色玻璃底 + 亮字：壁纸是深是浅都读得清，而且和 App 里那套"半透明面板"观感一致。
+    改主题（经典画廊 / 蓝白 / 自定义调色）**不会**影响小组件 —— 跨进程拿不到那套 Compose 主题。
+-->
+<resources>
+    <!-- 底：深色半透明（0xE6 ≈ 90%，比 App 里那档 BAR_ALPHA 实一点：壁纸比内容更花） -->
+    <color name="widget_background_color">#E6121720</color>
+    <!-- 主文字（余额数字 / 统计数字） -->
+    <color name="widget_text">#FFF2F6FA</color>
+    <!-- 次要文字（快照时间 / 消耗点数） -->
+    <color name="widget_text_dim">#99AFC0CF</color>
+    <!-- 余额与统计之间那条分隔线 -->
+    <color name="widget_divider">#33FFFFFF</color>
+
+    <!-- ==== 1×2 余额条（用户 2026-09-26 参考图：「1*2 的余额做成这个样式，带进度条」）====
+         ⚠️ 这几档是**照参考图取的颜色**，不走主题 —— 小组件跨进程拿不到 Compose 主题
+            （见本文件抬头），而且整块本来就是"固定一套深浅"的。
+         ⚠️ 早前那版还有「外层胶囊」的两档色（`widget_pill_color` / `widget_pill_stroke`），
+            用户 2026-09-26 点名「**去除胶囊，内容直接显示**」⇒ 连底带色一起去掉了，
+            内容现在直接坐在 `widget_background_color` 上。 -->
+    <!-- 档位徽章：深绿底 + 亮绿字（参考图里那颗 `Paper`） -->
+    <color name="widget_tier_bg">#662E7D32</color>
+    <color name="widget_tier_text">#FF9BE9A8</color>
+    <!-- 进度条：蓝 → 青 → 绿（参考图那条的走向）。
+         ⚠️ 和 App 顶栏胶囊下面那条（`Brush.horizontalGradient(primary, tertiary)`）**不是同一套**：
+            那条跟主题走，这里只能写死 —— 但"剩余越多越绿"这个读法两边一致。 -->
+    <color name="widget_bar_start">#FF4C8DF6</color>
+    <color name="widget_bar_mid">#FF37C6C0</color>
+    <color name="widget_bar_end">#FF54D98C</color>
+    <!-- V5 剩余百分比那个数（参考图里是绿色，和档位徽章同一族的亮绿） -->
+    <color name="widget_percent">#FF7BD88F</color>
+
+    <!-- ==== 热点图的五档绿（用户 2026-09-26：「统计用热点图啊」）====
+         ⚠️ **和电脑线那套逐字一致**（`UsageStatsScreen.levelColor`）——
+            它是"数据"不是"界面"，所以**写死绿色、不跟主题走**：
+            深浅主题下同一套绿，两张图才好比较。
+         0 档 = 很淡的底（否则"那天没跑"和"那天不存在"分不清）。 -->
+    <color name="heat_0">#33FFFFFF</color>
+    <color name="heat_1">#FF9BE9A8</color>
+    <color name="heat_2">#FF40C463</color>
+    <color name="heat_3">#FF30A14E</color>
+    <color name="heat_4">#FF216E39</color>
+</resources>

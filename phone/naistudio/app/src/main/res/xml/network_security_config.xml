@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 仅为新加坡测试后端的裸 IP 放开明文 HTTP，不影响其它域名/生产环境。 -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">43.134.169.250</domain>
+    </domain-config>
+</network-security-config>

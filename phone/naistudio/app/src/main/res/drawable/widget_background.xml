@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    小组件的底：圆角 + 半透明深色。
+
+    ⚠️ 颜色**写死不跟主题走**：小组件画在**启动器的壁纸上**，拿不到 App 的
+    Material 主题（那是 Compose 里的 `MaterialTheme`，跨进程不存在）。
+    所以这里用一套固定的"玻璃"配色，深浅壁纸下都能读（和 App 里那套毛玻璃观感一致）。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/widget_background_color" />
+    <corners android:radius="16dp" />
+</shape>

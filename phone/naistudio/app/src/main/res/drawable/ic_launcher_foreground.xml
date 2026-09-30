@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  图标前景：近白画框 + 晴蓝星芒。
+  2026-09-28 用户指定标准图标：Desktop\NAI图标-矢量.svg（画框 + 星芒），几何逐字照抄该 SVG。
+  ⚠️ foreground 与 monochrome 两份几何必须一致。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M34,42 h32 a6,6 0 0 1 6,6 v26 a6,6 0 0 1 -6,6 h-32 a6,6 0 0 1 -6,-6 v-26 a6,6 0 0 1 6,-6 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#F2F7FA"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M76,28 C77.2,33.2 78.8,34.8 84,36 C78.8,37.2 77.2,38.8 76,44 C74.8,38.8 73.2,37.2 68,36 C73.2,34.8 74.8,33.2 76,28 Z"
+        android:fillColor="#5BC8E8" />
+</vector>

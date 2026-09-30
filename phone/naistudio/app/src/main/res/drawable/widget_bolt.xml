@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    闪电（小组件上余额前面那颗）——
+    和 App 里"出图积分"那颗同一个形状（`ui/AppIcons.kt` 的 `BoltIcon`），
+    这里是 XML 版：小组件用 RemoteViews，**吃不到 Compose 的 ImageVector**。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="@color/widget_text">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M13,2 L4.5,13.5 L11,13.5 L10,22 L19.5,10 L13,10 Z" />
+</vector>

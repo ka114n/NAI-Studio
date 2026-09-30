@@ -1,0 +1,2494 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>笔刷实验室 · SAI 2「工具」面板</title>
+<style>
+  :root{
+    --bg:#15161a; --panel:#1e2026; --panel2:#262931; --panel3:#2b2f38; --line:#33373f;
+    --fg:#e8e9ee; --dim:#9aa0ab; --accent:#7aa2f7; --warn:#e0af68; --ok:#9ece6a; --bad:#f7768e;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--fg);font:13px/1.5 -apple-system,"Segoe UI",system-ui,"Microsoft YaHei",sans-serif;overflow:hidden}
+  #app{display:flex;height:100%}
+
+  /* ── 左：SAI 2「工具」面板 ───────────────────────────── */
+  #panel{width:336px;min-width:336px;height:100%;overflow-y:auto;overflow-x:hidden;background:var(--panel);
+         border-right:1px solid var(--line);padding:10px 10px 0}
+  #panel::-webkit-scrollbar{width:9px}
+  #panel::-webkit-scrollbar-thumb{background:#3a4150;border-radius:5px}
+  h1.title{font-size:14px;margin:2px 0 2px;letter-spacing:.5px}
+  #panel .sub{color:var(--dim);font-size:11px;margin-bottom:8px;line-height:1.45}
+  .card{border:1px solid var(--line);border-radius:9px;margin:0 0 9px;padding:8px;background:var(--panel2)}
+  .card > .ct{color:var(--accent);font-size:11.5px;margin:-2px 0 6px;display:flex;justify-content:space-between;align-items:center}
+  .card > .ct .hint{color:var(--dim);font-size:10.5px}
+  #ui_note{font-size:11px;color:var(--warn);min-height:15px;margin:2px 2px 7px;line-height:1.4}
+
+  /* 分类胶囊 */
+  .catrow{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+  button.cap{flex:0 1 auto;padding:3px 8px;font-size:11px;border-radius:11px;background:#2f3440;border:1px solid var(--line);color:var(--fg);cursor:pointer}
+  button.cap:hover{background:#3a4150}
+  button.cap.on{background:#33518f;border-color:#5b83d6;color:#fff;font-weight:600}
+
+  /* 工具格 */
+  .tgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+  .tool{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+        height:52px;padding:2px 1px;background:#2f3440;border:1px solid var(--line);border-radius:7px;cursor:pointer;color:#cfd4de}
+  .tool:hover{background:#3a4150}
+  .tool.on{background:#2c4270;border-color:#7aa2f7;color:#fff;box-shadow:0 0 0 1px #7aa2f766 inset}
+  .tool svg{width:20px;height:20px;display:block}
+  .tool .tn{font-size:9.5px;line-height:1.05;text-align:center;max-width:100%;overflow:hidden;white-space:nowrap}
+  .tri{position:absolute;right:1px;bottom:1px;width:0;height:0;border-left:7px solid transparent;border-bottom:7px solid #9aa0ab;cursor:pointer}
+  .tool:hover .tri,.pcell:hover .tri{border-bottom-color:#e8e9ee}
+  .tri.hot{border-bottom-color:var(--accent)}
+
+  /* 变体弹层 */
+  #vpop{position:fixed;z-index:99;display:none;background:#20232b;border:1px solid #4a5568;border-radius:8px;padding:4px;min-width:120px;box-shadow:0 8px 24px #000a}
+  #vpop .vp{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--fg);font-size:11.5px;padding:5px 8px;border-radius:5px;cursor:pointer}
+  #vpop .vp:hover{background:#33518f}
+  #vpop .vh{font-size:10.5px;color:var(--dim);padding:3px 8px 4px}
+
+  /* 预设格（2 列，真预览） */
+  .pgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .pcell{position:relative;background:#2a2e37;border:1px solid var(--line);border-radius:7px;padding:3px;cursor:pointer}
+  .pcell:hover{background:#343945}
+  .pcell.on{border-color:#7aa2f7;background:#2c4270}
+  .pcell canvas{display:block;width:100%;height:22px;border-radius:4px;background:#fff}
+  .pcell .pname{font-size:10.5px;color:#dfe3ea;margin-top:2px;text-align:center;white-space:nowrap;overflow:hidden}
+
+  /* 当前笔刷预览条 */
+  #barwrap{width:100%;height:44px;background:#fff;border-radius:6px;border:1px solid var(--line);overflow:hidden}
+  #bar{display:block}
+
+  /* 混合模式行 */
+  .mixrow{display:flex;gap:5px;align-items:center}
+  .mixrow select{flex:1;background:#14161b;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:12px}
+  .sq{width:26px;height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;
+      background:#2f3440;border:1px solid var(--line);border-radius:6px;cursor:pointer;color:var(--fg)}
+  .sq:hover{background:#3a4150}
+
+  /* 参数行 */
+  .prm{margin-bottom:6px}
+  .prm .pl{display:flex;align-items:center;gap:5px}
+  .prm .pn{flex:1;font-size:11.5px;color:#d7dbe3;white-space:nowrap;overflow:hidden}
+  .prm .pnum{width:62px;background:#14161b;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:2px 4px;font-size:11.5px;text-align:right}
+  .prm .pu{font-size:10.5px;color:var(--dim);width:12px}
+  .prm .prow{display:flex;align-items:center;gap:6px;margin-top:2px}
+  .prm .pr{flex:1;min-width:0;accent-color:var(--accent);height:14px}
+  .prm .pv{width:44px;text-align:right;font-size:10.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .prm.indent{padding-left:9px;border-left:2px solid #3b4250}
+  .ckl{display:flex;align-items:center;gap:5px;flex:1;font-size:11.5px;color:#d7dbe3;cursor:pointer}
+  .chksp{width:13px}
+  .lockb{width:22px;height:19px;font-size:11px;line-height:1;padding:0;display:flex;align-items:center;justify-content:center}
+  .lockb.on{background:#6b5620;border-color:#a8862f}
+  .tglbtn{width:100%;padding:5px;font-size:11.5px;border-radius:6px}
+  .tglbtn.on{background:#2c6b3f;border-color:#4aa06a;color:#fff;font-weight:600}
+
+  /* 大小圆点阵 */
+  .dots{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;justify-items:center}
+  .dot{width:34px;height:20px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;padding:0;cursor:pointer;border-radius:5px}
+  .dot:hover{background:#3a4150}
+  .dot i{display:block;border-radius:50%;background:#b9c0cc}
+  .dot.on i{background:var(--accent);box-shadow:0 0 0 2px #7aa2f755}
+  .dot.on{background:#2c4270}
+
+  /* 底部按钮条 */
+  #bottom{position:sticky;bottom:0;background:linear-gradient(180deg,#1e2026ee,#1e2026);padding:7px 0 9px;margin-top:4px;
+          border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+  #bottom button{padding:6px 2px;font-size:11.5px;border-radius:7px}
+  button{background:#2f3440;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer;font-family:inherit}
+  button:hover{background:#3a4150}
+  button.primary{background:#33518f;border-color:#4a6fb5}
+  button.warn{background:#5a3a3a;border-color:#7a4a4a}
+  button.on{background:#2c4270;border-color:#7aa2f7}
+
+  details{border:1px solid var(--line);border-radius:9px;background:var(--panel2);margin:0 0 9px;padding:7px 8px}
+  details > summary{cursor:pointer;color:var(--accent);font-size:11.5px;outline:none}
+  details[open] > summary{margin-bottom:6px}
+  .tip{color:var(--dim);font-size:11px;margin-top:5px;line-height:1.45}
+  .kbd{background:#14161b;border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:10.5px}
+
+  /* ── 右：画布 + 图层区 ───────────────────────────── */
+  #stagewrap{flex:1;min-width:0;display:flex;overflow:hidden}
+  #stage{position:relative;flex:1;min-width:0;background:#0f1013;overflow:hidden}
+  #cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+  #ring{position:absolute;border:1px solid #fff8;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);display:none}
+  #hud{position:absolute;left:10px;top:8px;right:10px;display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--fg);
+       background:#0009;border:1px solid #ffffff1a;border-radius:8px;padding:6px 10px;pointer-events:none;backdrop-filter:blur(3px)}
+  #hud b{color:var(--accent);font-weight:600}
+  #hud .nopen{color:var(--warn)}
+  #pbar{position:absolute;left:10px;bottom:10px;width:270px;background:#0009;border:1px solid #ffffff1a;border-radius:8px;padding:6px 10px;pointer-events:none}
+  #pbar .track{height:8px;background:#ffffff1f;border-radius:4px;overflow:hidden;margin-top:4px}
+  #pbar .fill{height:100%;width:0%;background:linear-gradient(90deg,#9ece6a,#e0af68,#f7768e)}
+  #pbar .t{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim)}
+
+  /* ── 最右：图层区（窄窗口折到画布下方） ───────────────────── */
+  #lp{width:224px;min-width:224px;height:100%;overflow-y:auto;overflow-x:hidden;background:var(--panel);
+      border-left:1px solid var(--line);padding:8px 8px 10px;display:flex;flex-direction:column}
+  #lp .lhead{color:var(--accent);font-size:11.5px;margin:0 0 6px;display:flex;justify-content:space-between;align-items:center}
+  #lp .lhead .hint{color:var(--dim);font-size:10.5px}
+  #layers{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden}
+  .lrow{display:flex;gap:6px;align-items:flex-start;background:var(--panel2);border:1px solid var(--line);
+        border-radius:7px;padding:5px;margin-bottom:5px;cursor:pointer}
+  .lrow:hover{background:#2f3440}
+  .lrow.on{border-color:#7aa2f7;background:#2c4270}
+  .lrow .lthumb{display:block;border-radius:4px;background:#3a3f49;flex:0 0 auto;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,0.13)}   /* 原来是 canvas 上的 strokeRect，改成 CSS 内阴影 ✓ */
+  .lrow .lmeta{flex:1;min-width:0}
+  .lrow .ltop{display:flex;align-items:center;gap:4px}
+  .lrow .lname{flex:1;font-size:11px;color:#dfe3ea;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lrow .leye{width:20px;height:18px;padding:0;font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center}
+  .lrow .leye.off{color:#7a8089}
+  .lrow .loprow{display:flex;align-items:center;gap:4px;margin-top:3px}
+  .lrow .lop{flex:1;min-width:0;accent-color:var(--accent);height:13px}
+  .lrow .lopv{width:32px;text-align:right;font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}
+  #lp .lops{display:grid;grid-template-columns:repeat(6,1fr);gap:3px;margin-top:6px}
+  #lp .lops button{padding:5px 0;font-size:12px;line-height:1;border-radius:6px}
+  #lp .ltip{color:var(--dim);font-size:10.5px;line-height:1.4;margin-top:6px}
+  #cvinfo{font-size:11px;color:var(--dim);margin:0 2px 6px;line-height:1.45}
+  #cvinfo b{color:var(--fg)}
+  #cvrow{display:flex;gap:5px;align-items:center;margin-bottom:5px}
+  #cvrow select{flex:1;background:#14161b;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:11.5px}
+  #cvrow input{width:62px;background:#14161b;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:2px 4px;font-size:11.5px;text-align:right}
+  #cvbtns{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  #cvbtns button{padding:5px 2px;font-size:11.5px;border-radius:6px}
+
+  @media (max-width:1100px){
+    #stagewrap{flex-direction:column}
+    #lp{width:100%;min-width:0;height:190px;border-left:0;border-top:1px solid var(--line)}
+    #lp .lops{grid-template-columns:repeat(6,1fr);margin-top:4px}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <h1 class="title">工具</h1>
+    <div class="sub">SAI 2「工具」面板布局 · 参数名与范围照 <code>init/brshape|scatter/*.ini</code>（见 <code>docs/44-*.md</code>）。<br>调好后点「导出 JSON」（version 2），我按同一套写进 Kotlin。</div>
+    <div id="ui_note">　</div>
+
+    <!-- 2 分类胶囊 -->
+    <div class="card">
+      <div class="ct"><span>分类</span><span class="hint">仅切当前分类</span></div>
+      <div id="cats"></div>
+    </div>
+
+    <!-- 3 工具图标网格 -->
+    <div class="card">
+      <div class="ct"><span>工具</span><span class="hint">右下角小三角 = 变体</span></div>
+      <div class="tgrid" id="tools"></div>
+      <div class="tip" id="tool_tip">　</div>
+    </div>
+
+    <!-- 4 笔刷预设网格（真预览） -->
+    <div class="card">
+      <div class="ct"><span>笔刷预设</span><span class="hint">点一下 = 整套参数装进当前笔</span></div>
+      <div class="pgrid" id="presets"></div>
+    </div>
+
+    <!-- 5 当前笔刷预览条 -->
+    <div class="card">
+      <div class="ct"><span>当前笔刷</span><span class="hint">参数一改就重画</span></div>
+      <div id="barwrap"><canvas id="bar"></canvas></div>
+      <div class="tip">先画一笔<span style="color:#3fae6a">绿</span>，再用当前参数画一笔<span style="color:#e08a2e">橙</span>叠上去 —— 开了「混色/水分量」时橙色会把绿色带出来（这就是 SAI 水彩的取样混色）。</div>
+    </div>
+
+    <!-- 6 混合模式 + 3 个小方按钮 -->
+    <div class="card">
+      <div class="ct"><span>混合模式</span><span class="hint" id="blend_hint"></span></div>
+      <div class="mixrow">
+        <select id="blendmode">
+          <option value="normal">正常</option>
+          <option value="multiply">正片叠底</option>
+          <option value="screen">滤色（未实现 → 按正常）</option>
+          <option value="overlay">叠加（未实现 → 按正常）</option>
+          <option value="add">线性加深（未实现 → 按正常）</option>
+        </select>
+        <button class="sq" id="b_clearprev" title="清空预览条">▲</button>
+        <button class="sq" id="b_reset" title="重置参数为默认">▮</button>
+        <button class="sq" id="b_export2" title="导出参数 JSON">⤓</button>
+      </div>
+    </div>
+
+    <!-- 7 工具层参数 -->
+    <div class="card">
+      <div class="ct"><span>工具层参数（SAI 2 工具面板）</span><span class="hint">勾选框能真关掉</span></div>
+      <div id="params"></div>
+      <div class="tip">「画笔浓度」与资源层的 <code>Opacity</code> 是<strong>相乘</strong>关系（0–100 × 0–100）。<br>
+        <b>Spacing 间距</b>：相对<strong>笔尖直径</strong>（SAI 口径 ✓），但步距上限被 <code>0.4 × 笔尖半径</code>夹住 ⇒
+        <b>调到 20% 以上不会再变稀</b>，只会更密、<strong>不可能成"一排点"</strong> ✓ ——
+        真想要颗粒/点状感请用「散布 Scattering / 计数 Count」（或关掉压感→大小的极值）✓。
+        HUD 的 <b>「步距」</b>格实时显示 <code>实际步距 ÷ 笔尖半径</code>（如 <code>0.20r</code>）✓。</div>
+    </div>
+
+    <!-- 8 画笔大小选择盘 -->
+    <div class="card">
+      <div class="ct"><span>画笔大小</span><span class="hint">圆点直径按数值对数缩放</span></div>
+      <div class="dots" id="dots"></div>
+    </div>
+
+    <!-- 8b 画布（新建 / 适配 / 保存 / 打开底图） -->
+    <div class="card">
+      <div class="ct"><span>画布</span><span class="hint">导出 PNG = 这个原始尺寸</span></div>
+      <div id="cvinfo">画布：<b id="doc_info">1024 × 1024</b> px · 缩放 <b id="zoom_info">100%</b><span id="doc_extra"></span></div>
+      <div id="cvrow">
+        <select id="cv_preset">
+          <option value="1024x1024">1024 × 1024</option>
+          <option value="2048x2048">2048 × 2048</option>
+          <option value="2480x3508">2480 × 3508（A4 300dpi）</option>
+          <option value="1600x1200">1600 × 1200</option>
+          <option value="custom">自定义…</option>
+        </select>
+        <input type="number" id="nw" value="1024" min="16" max="8192" step="1" title="宽（px）">
+        <input type="number" id="nh" value="1024" min="16" max="8192" step="1" title="高（px）">
+      </div>
+      <div id="cvbtns">
+        <button id="b_newdoc" class="warn">新建画布</button>
+        <button id="b_fit">适配窗口</button>
+        <button id="b_png" class="primary">保存 PNG</button>
+        <button id="b_open">打开图片当底图</button>
+      </div>
+      <input type="file" id="f_open" accept="image/*" style="display:none">
+      <div class="tip">打开图片是<b>本地读</b>（<code>FileReader</code>，不上传任何地方 ✓），读进来放在最下面的「底板」层。<br>
+        滚轮 = 以光标为锚点缩放（0.1–8×）；<span class="kbd">空格</span>+左键拖动 或 <span class="kbd">中键</span>拖动 = 平移。<br>
+        <span class="kbd">Ctrl+Z</span> 撤销 / <span class="kbd">Ctrl+Y</span>（或 <span class="kbd">Ctrl+Shift+Z</span>）重做。</div>
+    </div>
+
+    <!-- 10 应用层：压感 / 笔（保留原有能力） -->
+    <div class="card">
+      <div class="ct"><span>压感 / 笔（应用层）</span></div>
+      <div id="peninfo" class="tip">插上数位板，在画布上画一笔试试。</div>
+      <div class="prm"><div class="pl"><label class="ckl" for="p_size"><input type="checkbox" id="p_size">压感→大小</label></div></div>
+      <div class="prm"><div class="pl"><label class="ckl" for="p_alpha"><input type="checkbox" id="p_alpha">压感→浓度</label></div></div>
+      <div id="pen_params"></div>
+      <div class="prm"><div class="pl"><span class="pn">颜色</span><input type="color" id="color" style="flex:0 0 60px;height:22px;background:#14161b;border:1px solid var(--line);border-radius:5px"></div></div>
+    </div>
+
+    <!-- 资源层（可折叠，参数一个不删） -->
+    <details id="sai_box">
+      <summary>笔刷资源参数（SAI init）· brshape / scatter / 颜色抖动</summary>
+      <div id="sai_params"></div>
+    </details>
+
+    <div class="tip" style="margin:0 4px 8px">
+      画布快捷键：<span class="kbd">Ctrl+Z</span> 撤销、<span class="kbd">Ctrl+Y</span> 重做、<span class="kbd">E</span> 橡皮、<span class="kbd">[</span>/<span class="kbd">]</span> 改大小、<span class="kbd">0</span> 适配窗口、<span class="kbd">Delete</span> 清空当前层。
+    </div>
+
+    <!-- 9 底部一排按钮 -->
+    <div id="bottom">
+      <button id="b_undo">撤销</button>
+      <button id="b_redo">重做</button>
+      <button id="b_clear" class="warn">清空层</button>
+      <button id="b_png2" class="primary">存 PNG</button>
+      <button id="b_dump">导出 JSON</button>
+      <button id="b_full">全屏</button>
+    </div>
+  </aside>
+
+  <div id="stagewrap">
+  <main id="stage">
+    <canvas id="cv"></canvas>
+    <div id="ring"></div>
+    <div id="hud">
+      <span>设备：<b id="h_type">—</b></span>
+      <span>压力：<b id="h_p">—</b></span>
+      <span>倾斜：<b id="h_tilt">—</b></span>
+      <span>步距：<b id="h_step">—</b></span>
+      <span>缩放：<b id="h_zoom">—</b></span>
+      <span>工具：<b id="h_tool">—</b></span>
+      <span>层：<b id="h_layer">—</b></span>
+      <span>笔尖数：<b id="h_dabs">0</b></span>
+      <span>半径：<b id="h_r">—</b> px</span>
+      <span class="nopen" id="h_warn"></span>
+    </div>
+    <div id="pbar">
+      <div class="t"><span>实时笔压</span><span id="p_num">0.00</span></div>
+      <div class="track"><div class="fill" id="p_fill"></div></div>
+      <div class="t" style="margin-top:4px"><span id="p_note">等笔落下来…</span></div>
+    </div>
+  </main>
+
+  <!-- 图层区（右侧；窄窗口折到画布下方） -->
+  <aside id="lp">
+    <div class="lhead"><span>图层</span><span class="hint" id="lp_hint">点一行 = 选中</span></div>
+    <div id="layers"></div>
+    <div class="lops">
+      <button id="b_lnew" title="新建图层">＋</button>
+      <button id="b_ldup" title="复制图层">⧉</button>
+      <button id="b_ldel" title="删除图层">✕</button>
+      <button id="b_lup" title="上移一层">▲</button>
+      <button id="b_ldown" title="下移一层">▼</button>
+      <button id="b_lmerge" title="与下一层合并">⤓</button>
+    </div>
+    <div class="ltip">画笔只画在<b>选中层</b>上 ✓（点一行切层）。混色/水分的采样读的是<b>合成后的可见像素</b> ✓。</div>
+  </aside>
+  </div>
+</div>
+
+<div id="vpop"></div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   笔刷实验室 · SAI 2「工具」面板布局
+   - 资源层参数名/范围照 SAI 2 的 init/brshape|scatter/*.ini（docs/44-*.md）
+   - 工具层参数照 SAI 2「工具」面板（大小/最小大小/浓度/最小浓度/扩散和噪点/
+     画用纸/混色/水分量/色延伸/保持不透明度/模糊笔压）
+   ── 2026-09-20 两处用户口径 ────────────────────────────────────────────────
+   ① 「取消旋转功能」：`PointerEvent.twist` 那条链整套拿掉（tipAngleOf/twistText/
+      twistSeen/#h_twist/st.tilt 全删 ✓）；`AngleControl` 砍成 **0 固定 / 1 自动** 两态，
+      SAI 的 **2 笔杆方向 ＝ 本版不做** ✗；倾斜 tiltX/tiltY 只在 HUD 显示、不参与运算 ✓。
+      👉 **Kotlin 侧口径对齐**：`ComicModeScreen` 那边的 `nibRatio / angleControl` **这一批不动**
+         （本批只改网页 ✓）；等这批验收完，再把那边的 angleControl 也收成 0/1 两态、
+         并把笔杆旋转相关的取数一并删掉即可 ✓ —— 参数名与范围与 docs/44 保持一致 ✓。
+   ② 「画的线是一排点」＝"现在不行"的全部含义 ✗：根因是 `dabStep()` 的上限原来是
+      `0.9 × 笔尖半径`（只够"勉强搭上"，叠上 SizeJitter 就成珠链）⇒ 收紧成 **0.4r** ✓，
+      并把预设/散布类工具里 `Spacing > 20%` 的一律压到 ≤10% ✓。
+      真要点状/颗粒感请走 **Scattering / Count**，**不靠大 Spacing** ✗。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 0. 常量表 ─────────────────────────────────────────────────────────── */
+const TILE = 128;               // 纸纹/噪点贴图尺寸
+const UNDO_MAX = 64;                        // 撤销栈步数上限（现在是"按笔画"，不是整画布快照）
+const UNDO_BYTES_MAX = 256 * 1024 * 1024;   // 撤销栈总内存上限：超了从最老的开始淘汰
+const COMP_FULL_FRAC = 0.25;                // 脏区超过画布这个比例就整张重合成（简单、不会错 ✓）
+
+const DEFAULTS = {
+  // 应用层（SAI 没有，属"应用程序侧"）
+  color: "#1a1a1a", eraser: false, stabilize: 35,
+  pressureSize: true, pressureAlpha: false, pressureCurve: 1.0,
+  // 工具层（SAI 2「工具」面板）—— 本次新增
+  size: 24, minSizePct: 15, density: 100, minDensity: 0,
+  spreadNoise: false, spreadNoiseStrength: 30,
+  paperOn: true, paperStrength: 35,
+  blending: 0, blendLock: false, water: 0, colorStretch: 0,
+  keepOpacity: false, blurPressureOn: true, blurPressure: 60, blendMode: "normal",
+  // UI 态（也进导出）
+  category: "基础", toolId: "pencil", presetId: "draft1",
+  // 资源层 · SAI 通用（brshape）
+  Opacity: 100, AngleControl: 1, Angle: 0, AngleJitter: 0, Scaling: 100,
+  SizeJitter: 0, Spacing: 10, Scattering: 0, HighQualitySampling: 0,
+  // 资源层 · SAI 散布（scatter）
+  ShapeSize: 100, AbsoluteSize: 0, WxHRatio: 0, WxHJitter: 0,
+  Count: 1, CountJitter: 0, AllDirScattering: 0, GaussianDistribution: 0,
+  IntegerPosition: 0,
+  // 资源层 · SAI 颜色抖动
+  ColJitter: 0, HueJitter: 0, SaturationJitter: 0, BrightnessJitter: 0, ApplyToEachShape: 0,
+};
+
+const RESOURCE_KEYS = ["Opacity","AngleControl","Angle","AngleJitter","Scaling","SizeJitter","Spacing",
+  "Scattering","HighQualitySampling","ShapeSize","AbsoluteSize","WxHRatio","WxHJitter","Count",
+  "CountJitter","AllDirScattering","GaussianDistribution","IntegerPosition","ColJitter","HueJitter",
+  "SaturationJitter","BrightnessJitter","ApplyToEachShape"];
+const TOOL_KEYS = ["size","minSizePct","density","minDensity","spreadNoise","spreadNoiseStrength",
+  "paperOn","paperStrength","blending","blendLock","water","colorStretch","keepOpacity",
+  "blurPressureOn","blurPressure","blendMode"];
+const APP_KEYS = ["color","eraser","stabilize","pressureSize","pressureAlpha","pressureCurve"];
+
+/* ── 1. 分类 / 工具 / 预设 / 大小点阵（照图逐条抄） ─────────────────────── */
+const CATEGORIES = [
+  ["基础","墨线","勾线","水量","水彩"],
+  ["特效","服饰","动线","漫画","图案"],
+  ["基本","二值","Ver.1","漫画风"],
+];
+
+/* kind: dab=盖笔尖 / eraser=擦 / blur=真模糊 / bucket=油漆桶 / select=选区(占位) / stub=占位 */
+const TOOLS = [
+  { id:"pencil",   name:"铅笔",     icon:"pencil",      kind:"dab",
+    patch:{ size:3, Spacing:6, Scattering:0, SizeJitter:0, blending:0, water:0, colorStretch:0, paperOn:false, density:100, minSizePct:10, Opacity:100, IntegerPosition:0 } },
+  { id:"pencil2",  name:"铅笔",     icon:"pencil",      kind:"dab",
+    patch:{ size:9, Spacing:12, Scattering:8, SizeJitter:20, blending:0, water:0, paperOn:true, paperStrength:30, density:90, minSizePct:20 } },
+  { id:"water",    name:"水彩笔",   icon:"watercolor",  kind:"dab",
+    patch:{ size:48, Spacing:7, Scattering:6, SizeJitter:12, blending:65, water:70, colorStretch:45, paperOn:true, paperStrength:45, density:32, minSizePct:15 } },
+  { id:"water2",   name:"水彩笔",   icon:"watercolor",  kind:"dab",
+    patch:{ size:80, Spacing:6, Scattering:12, SizeJitter:22, blending:80, water:85, colorStretch:70, paperOn:true, paperStrength:55, density:22, minSizePct:10 } },
+  { id:"marker",   name:"马克笔",   icon:"marker",      kind:"dab",
+    patch:{ size:26, Spacing:4, Scattering:0, SizeJitter:0, AngleControl:1, WxHRatio:-60, blending:15, water:5, density:70, keepOpacity:false } },
+  { id:"eraser",   name:"橡皮擦",   icon:"eraser",      kind:"eraser", patch:{ size:40, Spacing:6, density:100, blending:0, water:0, colorStretch:0 } },
+  { id:"selpen",   name:"选区笔",   icon:"select",      kind:"select", patch:{} },
+  { id:"seleraser",name:"选区擦",   icon:"selectx",     kind:"select", patch:{} },
+  { id:"scatter",  name:"散布",     icon:"scatter",     kind:"dab",
+    /* Spacing 60 → 10（2026-09-20：「别靠大 spacing 做颗粒感」✗）—— 颗粒感照旧靠 Scattering/Count ✓ */
+    patch:{ size:26, Spacing:10, Scattering:120, SizeJitter:45, AngleJitter:100, Count:2, AllDirScattering:1, density:100 } },
+  { id:"bucket",   name:"油漆桶",   icon:"bucket",      kind:"bucket", patch:{} },
+  { id:"gradient", name:"渐变",     icon:"gradient",    kind:"stub",   patch:{} },
+  { id:"blur",     name:"模糊",     icon:"blur",        kind:"blur",   patch:{ size:40, blurPressureOn:true, blurPressure:70 } },
+  { id:"effect",   name:"特效笔",   icon:"effect",      kind:"dab",
+    /* Spacing 40 → 10（同上：颗粒感靠 Scattering/Count，不靠大 spacing ✓） */
+    patch:{ size:30, Spacing:10, Scattering:150, SizeJitter:60, AngleJitter:100, HueJitter:40, Count:2, AllDirScattering:1 } },
+  { id:"smudge",   name:"涂抹",     icon:"smudge",      kind:"dab",
+    patch:{ size:34, Spacing:5, blending:100, water:45, colorStretch:85, density:55, minSizePct:25 } },
+  { id:"sphere",   name:"球形笔刷", icon:"sphere",      kind:"dab",
+    patch:{ size:36, Spacing:10, SizeJitter:0, Scattering:0, blending:20, water:25, density:85 } },
+  { id:"blacken",  name:"涂黑",     icon:"blacken",     kind:"dab",
+    patch:{ size:22, Spacing:3, density:100, Opacity:100, color:"#000000", blending:0, water:0, paperOn:false } },
+  { id:"binary",   name:"二值笔",   icon:"binary",      kind:"dab",
+    patch:{ size:6, Spacing:3, density:100, IntegerPosition:1, paperOn:false, blending:0, water:0, pressureSize:false, minSizePct:100, SizeJitter:0 } },
+  { id:"binary2",  name:"二值笔",   icon:"binary",      kind:"dab",
+    patch:{ size:12, Spacing:4, density:100, IntegerPosition:1, paperOn:false, blending:0, water:0, minSizePct:100 } },
+  { id:"selpen2",  name:"选区笔",   icon:"select",      kind:"select", patch:{} },
+  { id:"seleraser2",name:"选区擦",  icon:"selectx",     kind:"select", patch:{} },
+  { id:"binary3",  name:"二值笔",   icon:"binary",      kind:"dab",
+    patch:{ size:3, Spacing:2, density:100, IntegerPosition:1, paperOn:false, blending:0, water:0, minSizePct:100 } },
+  { id:"binary4",  name:"二值笔",   icon:"binary",      kind:"dab",
+    patch:{ size:18, Spacing:5, density:100, IntegerPosition:1, paperOn:false, blending:0, water:0, minSizePct:60 } },
+];
+/* 每个工具 2~3 个占位变体（点小三角弹出） */
+const VARIANTS = ["变体 A（占位）","变体 B（占位）","变体 C（占位）"];
+
+const PRESET_LIST = [
+  /* ⚠ 2026-09-20「一排点」修复：预设里凡是 Spacing > 20% 的一律压到 10% ✓
+     （草稿1 38→10、草稿2 48→10）。散布类预设**保留** Scattering/Count ✓ ——
+     颗粒感靠「散布 / 计数」，**不靠大 Spacing** ✗（dabStep 里那条 0.4r 护栏也会再夹一次）。 */
+  { id:"draft1", name:"草稿1", patch:{ size:14, Spacing:10, Scattering:20, SizeJitter:38, AngleJitter:22, density:78, opacity:null,
+      minSizePct:20, blending:0, water:0, colorStretch:0, paperOn:false } },
+  { id:"draft2", name:"草稿2", patch:{ size:24, Spacing:10, Scattering:34, SizeJitter:55, AngleJitter:38, density:62,
+      minSizePct:25, blending:0, water:0, colorStretch:0, paperOn:false } },
+  { id:"line1",  name:"线稿",  patch:{ size:4, Spacing:3, Scattering:0, SizeJitter:0, AngleJitter:0, density:100, Opacity:100,
+      minSizePct:6, blending:0, water:0, colorStretch:0, paperOn:false, IntegerPosition:1, pressureSize:true } },
+  { id:"line2",  name:"线稿",  patch:{ size:8, Spacing:4, Scattering:0, SizeJitter:6, AngleJitter:0, density:100,
+      minSizePct:4, blending:0, water:0, colorStretch:0, paperOn:false, IntegerPosition:1 } },
+  { id:"paint1", name:"上色",  patch:{ size:62, Spacing:11, Scattering:4, SizeJitter:8, density:34, Opacity:62,
+      minSizePct:30, blending:22, water:12, colorStretch:6, paperOn:true, paperStrength:25 } },
+  { id:"paint2", name:"上色2", patch:{ size:96, Spacing:13, Scattering:6, SizeJitter:10, density:24, Opacity:50,
+      minSizePct:35, blending:38, water:22, colorStretch:10, paperOn:true, paperStrength:35 } },
+  { id:"blend1", name:"晕染",  patch:{ size:70, Spacing:8, Scattering:6, SizeJitter:12, density:20, Opacity:55,
+      minSizePct:30, blending:70, water:68, colorStretch:48, paperOn:true, paperStrength:48 } },
+  { id:"omni",   name:"万能",  patch:{ size:24, Spacing:8, Scattering:2, SizeJitter:6, density:86, Opacity:100,
+      minSizePct:15, blending:30, water:26, colorStretch:22, paperOn:true, paperStrength:30 } },
+  { id:"wc1",    name:"水彩",  patch:{ size:72, Spacing:6, Scattering:10, SizeJitter:18, density:30, Opacity:80,
+      minSizePct:15, blending:76, water:80, colorStretch:62, paperOn:true, paperStrength:50 } },
+  { id:"wc2",    name:"水彩",  patch:{ size:112, Spacing:5, Scattering:14, SizeJitter:24, density:22, Opacity:70,
+      minSizePct:12, blending:86, water:92, colorStretch:78, paperOn:true, paperStrength:60 } },
+  { id:"blur1",  name:"模糊",  patch:{ size:40, blurPressureOn:true, blurPressure:72 }, tool:"blur" },
+  { id:"blur2",  name:"模糊",  patch:{ size:92, blurPressureOn:true, blurPressure:34 }, tool:"blur" },
+  { id:"mix1",   name:"混色",  patch:{ size:46, Spacing:6, Scattering:4, SizeJitter:8, density:60, Opacity:90,
+      minSizePct:20, blending:100, water:58, colorStretch:70, paperOn:true, paperStrength:28 } },
+  { id:"mix2",   name:"混色",  patch:{ size:30, Spacing:5, Scattering:2, SizeJitter:4, density:74, Opacity:100,
+      minSizePct:18, blending:92, water:40, colorStretch:52, paperOn:true, paperStrength:24 } },
+  { id:"blur3",  name:"模糊",  patch:{ size:150, blurPressureOn:false, blurPressure:100 }, tool:"blur" },
+  { id:"fusion", name:"融合",  patch:{ size:82, Spacing:4, Scattering:8, SizeJitter:14, density:18, Opacity:65,
+      minSizePct:28, blending:100, water:76, colorStretch:90, paperOn:true, paperStrength:40 } },
+];
+
+/* 画笔大小选择盘（照图逐条抄） */
+const SIZE_GRID = [
+  [0.7,0.8,1,1.5,2],
+  [2.3,2.6,3,3.3,4],
+  [5,6,7,8,9],
+  [10,12,14,16,20],
+  [25,30,35,40,50],
+  [60,70,80,100,120],
+  [160,200,250,300,350],
+  [400,450,500,600,700],
+  [800,900,1000,1200,1600],
+  [1800,2000,2500,3000,3500],
+  [4000,5000],
+];
+const SIZE_MIN = 0.7, SIZE_MAX = 5000;
+
+/* ── 2. 内联 SVG 图标（零外链） ───────────────────────────────────────── */
+function iconSvg(name){
+  const S = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">';
+  const F = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none">';
+  switch(name){
+    case "pencil":     return S + '<path d="M15.5 3.5l5 5L8 21H3v-5z"/><path d="M13.5 5.5l5 5"/></svg>';
+    case "watercolor": return S + '<path d="M6 20c4 0 7-2.6 7-6 0-2.6-2-4.6-4-6.5C7.6 6 6.5 4.4 6.5 3c-1.6 2-3.5 4.6-3.5 7 0 3.4 2.5 6 3 10z"/><path d="M16 14c2 0 3.5 1.6 3.5 3.5S18 21 16 21"/></svg>';
+    case "marker":     return S + '<path d="M4 20h7l9-9-7-7-9 9z"/><path d="M4 20l3-3"/></svg>';
+    case "eraser":     return S + '<path d="M8 20h11"/><path d="M4.5 15.5l7-7a2 2 0 0 1 2.8 0l4.2 4.2a2 2 0 0 1 0 2.8L15 19H8l-3.5-3.5z"/></svg>';
+    case "select":     return S + '<rect x="3" y="4" width="18" height="16" rx="1.5" stroke-dasharray="3 2.5"/></svg>';
+    case "selectx":    return S + '<rect x="3" y="4" width="18" height="16" rx="1.5" stroke-dasharray="3 2.5"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>';
+    case "scatter":    return F + '<circle cx="7" cy="8" r="1.7"/><circle cx="14" cy="6" r="1.4"/><circle cx="18" cy="11" r="1.8"/><circle cx="10" cy="13" r="1.4"/><circle cx="15" cy="16" r="1.7"/><circle cx="6" cy="17" r="1.2"/></svg>';
+    case "bucket":     return S + '<path d="M9 3l9 9-7 7-9-9z"/><path d="M5 21h14"/><path d="M20 14c1.3 1.6 2 2.7 2 3.6A2 2 0 0 1 18 17.6c0-.9.7-2 2-3.6z" fill="currentColor" stroke="none"/></svg>';
+    case "gradient":   return F + '<rect x="3" y="5" width="18" height="3.2" rx="1" opacity="0.15"/><rect x="3" y="9.4" width="18" height="3.2" rx="1" opacity="0.4"/><rect x="3" y="13.8" width="18" height="3.2" rx="1" opacity="0.7"/><rect x="3" y="18.2" width="18" height="2.4" rx="1" opacity="1"/></svg>';
+    case "blur":       return S + '<circle cx="11" cy="12" r="5.5"/><circle cx="11" cy="12" r="8.5" opacity="0.45"/><circle cx="19" cy="6" r="2"/></svg>';
+    case "effect":     return F + '<path d="M12 2l2.1 5.6L20 9.7l-5.9 2.1L12 17.4l-2.1-5.6L4 9.7l5.9-2.1z"/><circle cx="19" cy="18" r="2"/></svg>';
+    case "smudge":     return S + '<path d="M9 21v-6.5c0-1-.4-1.6-1.2-2.4L5 9.4C4 8.4 5 6.6 6.3 7.3L9 9V3.6A1.6 1.6 0 0 1 12.2 3.6V10l1.4-1.4a1.6 1.6 0 0 1 2.3 2.3L14 12.8V15"/></svg>';
+    case "sphere":     return F + '<circle cx="12" cy="12" r="9" opacity="0.9"/><circle cx="9" cy="9" r="3" fill="#fff" opacity="0.75"/></svg>';
+    case "blacken":    return F + '<circle cx="12" cy="12" r="8.5"/><path d="M4 20L20 4" stroke="#fff" stroke-width="1.6"/></svg>';
+    case "binary":     return F + '<rect x="4" y="4" width="16" height="16" rx="1.5"/><rect x="12" y="4" width="8" height="8" fill="#fff"/><rect x="4" y="12" width="8" height="8" fill="#fff"/></svg>';
+    default:           return S + '<circle cx="12" cy="12" r="8"/></svg>';
+  }
+}
+
+/* ── 3. 小工具函数 ────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+function gauss(){
+  let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+function hexToHsl(hex){
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex); const n = m ? parseInt(m[1], 16) : 0x1a1a1a;
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0; if (d) { if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; if (h < 0) h += 360; }
+  const l = (mx + mn) / 2, s = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+  return { h: h, s: s, l: l };
+}
+function hslToRgb(h, s, l){
+  h = ((h % 360) + 360) % 360 / 360; s = clamp(s, 0, 1); l = clamp(l, 0, 1);
+  if (s === 0){ const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = (t) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [Math.round(f(h + 1 / 3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1 / 3) * 255)];
+}
+
+/* ── 4. 参数状态 ──────────────────────────────────────────────────────── */
+const P = Object.assign({}, DEFAULTS);
+const cv = $("cv"), ctx = cv.getContext("2d", { willReadFrequently: true });
+const ring = $("ring");
+let DPR = 1, W = 0, H = 0;                  // W/H = 视图（stage）的 CSS 尺寸
+const PREVIEW_DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+function toolById(id){
+  for (const t of TOOLS) if (t.id === id) return t;
+  return TOOLS[0];
+}
+function blendOp(mode){
+  if (mode === "multiply") return "multiply";
+  return "source-over";                       // 未实现的模式一律按「正常」
+}
+function isErasing(){
+  const k = toolById(P.toolId).kind;
+  return k === "eraser" || P.eraser;
+}
+let uiNote = null;
+function note(msg){ uiNote.textContent = msg; }
+
+/* ═══ 4b. 文档 / 图层 / 视图 ═══════════════════════════════════════════════
+   【图层数据结构】**每层一张独立 canvas**，尺寸 = 画布原始尺寸 DOCW×DOCH；
+   像素坐标系 = 画布原始像素（笔迹一律画在**选中层**上 ✓）。
+   【合成】按从下到上 drawImage 到离屏 compCv（整张或一块，见 4c 那段 ✓）；
+   主画布 cv 只画"合成结果的脏矩形"（**整数**设备像素 ✓）—— 绝不每帧全画布合成 ✗。
+   【采样】混色/水分/色延伸的取样源 = compCv（合成后的像素 ✓），
+   读之前先把待合成的区域合成掉（`ensureCompBox()` ✓）。 */
+let DOCW = 1024, DOCH = 1024;                 // 画布原始尺寸（导出 PNG 就是这个尺寸）
+const layers = [];                            // [0] = 最下层
+let activeId = 0, nextLayerId = 1;
+const view = { scale: 1, tx: 0, ty: 0, ready: false, autoFit: true };
+const VIEW_MIN = 0.1, VIEW_MAX = 8;
+
+const compCv = document.createElement("canvas");           // 合成结果（离屏，画布原始尺寸）
+const compCtx = compCv.getContext("2d", { willReadFrequently: true });
+const preCv = document.createElement("canvas");            // 每笔"前像素"暂存（撤销用）
+const preCtx = preCv.getContext("2d", { willReadFrequently: true });
+let compDirty = null;                                      // 待重合成的区域（画布像素的 UNION；null = 没有待办 ✓）
+
+function rectClamp(x0, y0, x1, y1){
+  x0 = clamp(Math.floor(x0), 0, DOCW); y0 = clamp(Math.floor(y0), 0, DOCH);
+  x1 = clamp(Math.ceil(x1), 0, DOCW);  y1 = clamp(Math.ceil(y1), 0, DOCH);
+  if (x1 <= x0 || y1 <= y0) return null;
+  return { x0: x0, y0: y0, x1: x1, y1: y1 };
+}
+function rectUnion(a, b){
+  if (!a) return b; if (!b) return a;
+  return { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+}
+function rectInter(a, b){
+  if (!a || !b) return null;
+  const r = { x0: Math.max(a.x0, b.x0), y0: Math.max(a.y0, b.y0), x1: Math.min(a.x1, b.x1), y1: Math.min(a.y1, b.y1) };
+  return (r.x1 <= r.x0 || r.y1 <= r.y0) ? null : r;
+}
+function rectArea(r){ return r ? (r.x1 - r.x0) * (r.y1 - r.y0) : 0; }
+
+/* ── 4c. 合成（**只有一个脏矩形**，没有瓦片表 ✓）───────────────────────────
+   2026-09-20 用户实机报「普通版画时线条周边有方块」✗，病根有两条，全在这条路上：
+   ① `flushView()` 拿**小数**的设备坐标去 `clearRect` / `clip`（实测 `205.48, 335.84 …`）：
+      先 `clearRect` 把边缘那一列像素擦掉 52% → 变成半透明；紧接着的 `clip` + 白底
+      又只按同一个 52% 补回来 ⇒ 那一列**永远补不满**（alpha ≈ 0.75），深色页面背景
+      透出来就是一条 1px 宽的灰条 ✗。每刷新一次脏矩形就留下两三条，
+      所以一整笔画下来"线条周边散着若干细长条 / 空框" ✗（正是用户截图那个样子）。
+      纸的四条边也同理：`view.tx` 是 14.5 这种小数 ⇒ 纸面四周一圈半透明缝 ✗。
+   ② 原来还有一套"脏瓦片表"（`compValid` + `compositeStaleTiles` + `visibleDocRect`）：
+      只重合成"看得见的瓦片"、采样时又合成另一块，多一层状态就多一层错位的可能，
+      换画布 / 撤销 / 显隐都要手动对齐 ✗ —— 简单版能跑对，正是因为它**没有这些东西** ✓。
+   ✅ 现在照简单版那条已经跑通的路子，只留**一个脏矩形**：
+      · `compDirty` = 所有需要重画区域的 **UNION**（null = 没有待办）；
+      · 要合就把它合掉：面积 > 画布 `COMP_FULL_FRAC` 就整张重合成（实现简单、不会错 ✓）；
+      · `flushView()` 只做：**整数**脏矩形 → clear → 白底 → `drawImage(compCv)`，
+        三步全夹在**整数**矩形里（半像素都不留 ⇒ 不可能再出现半透明缝 ✓）。
+   代价：dirty 很大时要把整张画布重合成一次（见 `COMP_FULL_FRAC` 那条），
+   换来的是"状态最少、不可能错位"。 */
+
+function markCompDirty(r){
+  compDirty = r ? rectUnion(compDirty, r) : { x0: 0, y0: 0, x1: DOCW, y1: DOCH };
+}
+/* 把一块区域重合成：清掉 → 按从下到上叠可见层（不透明度和显隐都在这里生效） */
+function compositeRect(r){
+  if (!r) return;
+  const w = r.x1 - r.x0, h = r.y1 - r.y0;
+  if (w <= 0 || h <= 0) return;
+  compCtx.setTransform(1, 0, 0, 1, 0, 0);
+  compCtx.globalCompositeOperation = "source-over";
+  compCtx.globalAlpha = 1;
+  compCtx.clearRect(r.x0, r.y0, w, h);
+  for (let k = 0; k < layers.length; k++){
+    const L = layers[k];
+    if (!L.visible || L.opacity <= 0) continue;
+    compCtx.globalAlpha = clamp(L.opacity, 0, 1);
+    compCtx.drawImage(L.cv, r.x0, r.y0, w, h, r.x0, r.y0, w, h);
+  }
+  compCtx.globalAlpha = 1;
+}
+/* 把待办合成掉：小了只合那一块，大了整张重合成（简单、不会画错 ✓） */
+function compositeDirty(){
+  if (!compDirty) return;
+  const d = compDirty;
+  compDirty = null;
+  const r = rectClamp(d.x0, d.y0, d.x1, d.y1);
+  if (!r) return;
+  if (rectArea(r) > DOCW * DOCH * COMP_FULL_FRAC) compositeRect({ x0: 0, y0: 0, x1: DOCW, y1: DOCH });
+  else compositeRect(r);
+}
+function compositeAll(){
+  compositeRect({ x0: 0, y0: 0, x1: DOCW, y1: DOCH });
+  compDirty = null;
+}
+/* 采样用：读 compCv 之前必须**立刻**把待办合成掉（`sampleAvg()` 里 g === compCtx 时调 ✓） */
+function ensureCompBox(x, y, w, h){
+  const r = rectClamp(x, y, x + w, y + h);
+  if (!r) return;
+  markCompDirty(r);
+  compositeDirty();
+}
+
+/* ── 视图（缩放 / 平移） ── */
+let vDirty = false, vFull = false, vRect = null, rafPending = false;
+function invalidateView(r){
+  if (!r) vFull = true;
+  else if (!vFull) vRect = rectUnion(vRect, r);
+  vDirty = true;
+  if (!rafPending){ rafPending = true; requestAnimationFrame(() => { rafPending = false; flushView(); }); }
+}
+function screenToDoc(sx, sy){ return [(sx - view.tx) / view.scale, (sy - view.ty) / view.scale]; }
+function docToScreen(dx, dy){ return [dx * view.scale + view.tx, dy * view.scale + view.ty]; }
+function rectToDevice(r){
+  return [ (r.x0 * view.scale + view.tx) * DPR, (r.y0 * view.scale + view.ty) * DPR,
+           (r.x1 * view.scale + view.tx) * DPR, (r.y1 * view.scale + view.ty) * DPR ];
+}
+function setViewInfo(){
+  const txt = Math.round(view.scale * 100) + "%";
+  const a = $("h_zoom"), b = $("zoom_info");
+  if (a) a.textContent = txt;
+  if (b) b.textContent = txt;
+}
+function fitView(){
+  const s = clamp(Math.min(W / DOCW, H / DOCH) * 0.96, VIEW_MIN, VIEW_MAX);
+  view.scale = s;
+  view.tx = (W - DOCW * s) / 2;
+  view.ty = (H - DOCH * s) / 2;
+  view.ready = true;
+  view.autoFit = true;                       // 窗口再变还是继续"适配窗口"（手动缩放过就不再自动适配）
+  setViewInfo();
+  invalidateView(null);
+}
+function zoomAt(mx, my, factor){
+  const s0 = view.scale, s1 = clamp(s0 * factor, VIEW_MIN, VIEW_MAX);
+  if (Math.abs(s1 - s0) < 1e-6) return;
+  const p = screenToDoc(mx, my);
+  view.scale = s1;
+  view.tx = mx - p[0] * s1;
+  view.ty = my - p[1] * s1;
+  view.ready = true;
+  view.autoFit = false;
+  setViewInfo();
+  invalidateView(null);
+}
+/* 主画布刷新：只重画脏矩形 ✓（脏矩形 = 白纸底 + 合成结果，且**全程整数设备像素** ✓）
+   ⚠ 2026-09-20「线条周边有方块」的**直接来源**就在这里：原来的脏矩形是小数
+     （`rectToDevice()` 不取整），`clearRect` 把边缘像素擦成半透明、`clip` 又只按
+     同一比例补回来 ⇒ 那一列永远是 alpha ≈ 0.75 的半透明缝 ✗。现在全部向外取整。 */
+function flushView(){
+  if (!vDirty) return;
+  vDirty = false;
+  compositeDirty();                     // 待合成的先合掉（不依赖"看得见的瓦片"这种中间状态 ✓）
+  let dx0 = 0, dy0 = 0, dx1 = cv.width, dy1 = cv.height;
+  if (!vFull && vRect){
+    const a = rectToDevice(vRect);
+    /* ★★ 一定要向外取整到**整数**设备像素：小数坐标 = 半透明缝 = 用户看到的"方块" ✗ */
+    dx0 = clamp(Math.floor(a[0]), 0, cv.width);  dy0 = clamp(Math.floor(a[1]), 0, cv.height);
+    dx1 = clamp(Math.ceil(a[2]), 0, cv.width);   dy1 = clamp(Math.ceil(a[3]), 0, cv.height);
+  }
+  vFull = false; vRect = null;
+  const w = dx1 - dx0, h = dy1 - dy0;
+  if (w <= 0 || h <= 0) return;
+  const g = ctx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.globalAlpha = 1;
+  g.imageSmoothingEnabled = true;
+  g.clearRect(dx0, dy0, w, h);
+  g.save();
+  g.beginPath(); g.rect(dx0, dy0, w, h); g.clip();          // 脏矩形（整数 ✓）
+  const s = view.scale, d = DPR;
+  /* 纸的范围也取整：`view.tx` 常是 14.5 这种小数，不取整纸的四边就一圈半透明缝 ✗ */
+  const px = Math.round(view.tx * d), py = Math.round(view.ty * d);
+  const pw = Math.round((view.tx + DOCW * s) * d) - px, ph = Math.round((view.ty + DOCH * s) * d) - py;
+  g.beginPath(); g.rect(px, py, pw, ph); g.clip();          // 白底与合成都夹在这张纸里（整数 ✓）
+  g.fillStyle = "#ffffff";
+  g.fillRect(px, py, pw, ph);
+  g.setTransform(s * d, 0, 0, s * d, px, py);               // 合成结果按同一对齐方式贴上去 ✓
+  g.imageSmoothingEnabled = s < 4;
+  g.drawImage(compCv, 0, 0);
+  g.restore();
+}
+
+/* ── 图层 ── */
+function layerById(id){ for (let i = 0; i < layers.length; i++) if (layers[i].id === id) return layers[i]; return null; }
+function activeLayer(){
+  let L = layerById(activeId);
+  if (!L){ L = layers[layers.length - 1]; if (L) activeId = L.id; }
+  return L;
+}
+function makeLayer(name){
+  const c = document.createElement("canvas");
+  c.width = DOCW; c.height = DOCH;
+  const id = nextLayerId++;
+  return { id: id, name: name || ("图层 " + id), cv: c,
+           ctx: c.getContext("2d", { willReadFrequently: true }),
+           visible: true, opacity: 1, thumbDirty: true };
+}
+function setupDoc(w, h){
+  DOCW = clamp(Math.round(w), 16, 8192);
+  DOCH = clamp(Math.round(h), 16, 8192);
+  compCv.width = DOCW; compCv.height = DOCH;
+  preCv.width = DOCW; preCv.height = DOCH;
+  layers.length = 0;
+  const L = makeLayer("图层 1");
+  layers.push(L);
+  activeId = L.id;
+  markCompDirty(null);
+  buildLayerPanel();
+  updateDocInfo();
+  invalidateView(null);
+}
+function layerIndex(id){ for (let i = 0; i < layers.length; i++) if (layers[i].id === id) return i; return -1; }
+function layerEmpty(L){
+  const im = L.ctx.getImageData(0, 0, DOCW, DOCH).data;
+  for (let i = 3; i < im.length; i += 4) if (im[i] !== 0) return false;
+  return true;
+}
+function updateDocInfo(){
+  const a = $("doc_info");
+  if (a) a.textContent = DOCW + " × " + DOCH;
+  const e = $("doc_extra");
+  if (e) e.textContent = " · " + layers.length + " 层";
+  const hl = $("h_layer");
+  if (hl){ const L = activeLayer(); hl.textContent = L ? L.name : "—"; }
+  setViewInfo();
+}
+/* 结构快照（新建/删除/合并/换画布 这种"图层操作"的撤销就靠它） */
+function snapshotDoc(){
+  const ls = [];
+  for (let i = 0; i < layers.length; i++){
+    const L = layers[i];
+    ls.push({ id: L.id, name: L.name, visible: L.visible, opacity: L.opacity,
+              data: L.ctx.getImageData(0, 0, DOCW, DOCH) });
+  }
+  return { docW: DOCW, docH: DOCH, activeId: activeId, nextId: nextLayerId, layers: ls };
+}
+function restoreDoc(snap){
+  DOCW = snap.docW; DOCH = snap.docH;
+  compCv.width = DOCW; compCv.height = DOCH;
+  preCv.width = DOCW; preCv.height = DOCH;
+  layers.length = 0;
+  for (const s of snap.layers){
+    const L = makeLayer(s.name);
+    L.id = s.id; L.visible = s.visible; L.opacity = s.opacity;
+    L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    L.ctx.putImageData(s.data, 0, 0);
+    layers.push(L);
+  }
+  nextLayerId = snap.nextId;
+  activeId = snap.activeId;
+  markCompDirty(null);
+  buildLayerPanel();
+  updateDocInfo();
+  invalidateView(null);
+}
+
+/* ── 撤销 / 重做（按笔画 + 图层操作；有内存预算 ✓） ── */
+const undoStack = [], redoStack = [];
+let undoBytes = 0, strokePre = null, strokeLayerId = 0;
+function entryBytes(e){
+  if (e.kind === "pixels"){
+    return (e.before ? e.before.data.length : 0) + (e.after ? e.after.data.length : 0);
+  }
+  let n = 0;
+  for (const s of [e.before, e.after]) if (s) for (const L of s.layers) n += L.data.data.length;
+  return n;
+}
+/* 两个栈的总内存（撤销/重做都算上，别让重做栈偷偷吃内存） */
+function totalBytes(){
+  let n = 0;
+  for (let i = 0; i < undoStack.length; i++) n += entryBytes(undoStack[i]);
+  for (let i = 0; i < redoStack.length; i++) n += entryBytes(redoStack[i]);
+  return n;
+}
+/* 上限：64 步 / 256MB —— 超了从**最老**的开始淘汰 ✓ */
+function trimHistory(){
+  while (undoStack.length > UNDO_MAX || (undoStack.length > 1 && totalBytes() > UNDO_BYTES_MAX)){
+    undoStack.shift();
+  }
+  undoBytes = totalBytes();
+  updateUndoInfo();
+}
+function pushHistory(e){
+  undoStack.push(e);
+  redoStack.length = 0;                       // 新操作一进来，重做栈就作废
+  trimHistory();
+}
+function updateUndoInfo(){
+  const h = $("lp_hint");
+  if (h) h.textContent = "撤销 " + undoStack.length + " / 重做 " + redoStack.length;
+}
+function applyState(e, side){
+  if (e.kind === "pixels"){
+    const L = layerById(e.layerId);
+    const img = e[side];
+    if (!L || !img) return;
+    L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    L.ctx.putImageData(img, e.x, e.y);
+    const r = rectClamp(e.x, e.y, e.x + img.width, e.y + img.height);
+    if (r){ markCompDirty(r); invalidateView(r); }
+    L.thumbDirty = true;
+    renderThumbs();
+  } else {
+    if (side === "after" && !e.after) return;                 // 还没捕获过后态
+    if (side === "before" && !e.after) e.after = snapshotDoc();  // 懒捕获：撤销时顺手把"现在"存下来
+    restoreDoc(e[side]);
+  }
+}
+function doUndo(){
+  const e = undoStack.pop();
+  if (!e){ note("没有可撤销的操作了（撤销栈空）"); return; }
+  applyState(e, "before");
+  redoStack.push(e);
+  trimHistory();
+  note("撤销：" + e.label + "（Ctrl+Y 可重做）");
+}
+function doRedo(){
+  const e = redoStack.pop();
+  if (!e){ note("没有可重做的操作了"); return; }
+  applyState(e, "after");
+  undoStack.push(e);
+  trimHistory();
+  note("重做：" + e.label);
+}
+/* 图层结构操作：先拍"前"态，执行，再懒捕获"后"态 ✓ */
+function commitDocOp(fn, label){
+  const before = snapshotDoc();
+  fn();
+  pushHistory({ kind: "doc", label: label, before: before, after: null });
+  buildLayerPanel();
+  updateDocInfo();
+  markCompDirty(null);
+  invalidateView(null);
+}
+
+/* ── 5. 纸纹 / 噪点贴图（程序生成，乘法作用在笔迹 alpha 上） ───────────── */
+let dabTile = document.createElement("canvas");
+let tileCtx = dabTile.getContext("2d");
+let tileVersion = 0;
+function hash2(x, y){
+  let n = (x | 0) * 374761393 + (y | 0) * 668265263;
+  n = (n ^ (n >> 13)) * 1274126177;
+  return ((n ^ (n >> 16)) >>> 0) / 4294967295;
+}
+/* 无缝 value noise：坐标归一化到 0..1，freq 格点环绕 */
+function vnoise(u, v, freq){
+  const x = u * freq, y = v * freq;
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const sx = xf * xf * (3 - 2 * xf), sy = yf * yf * (3 - 2 * yf);
+  const w = (i) => ((i % freq) + freq) % freq;
+  const a = hash2(w(xi), w(yi)), b = hash2(w(xi + 1), w(yi));
+  const c = hash2(w(xi), w(yi + 1)), d = hash2(w(xi + 1), w(yi + 1));
+  return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
+}
+function rebuildTile(){
+  const img = tileCtx.createImageData(TILE, TILE);
+  const d = img.data;
+  const ps = P.paperOn ? (P.paperStrength / 100) * 0.85 : 0;
+  const ss = P.spreadNoise ? (P.spreadNoiseStrength / 100) * 0.9 : 0;
+  const grain = new Uint8Array(TILE * TILE);          // 细颗粒只生成一次
+  for (let i = 0; i < grain.length; i++) grain[i] = (Math.random() * 256) | 0;
+  for (let y = 0; y < TILE; y++){
+    for (let x = 0; x < TILE; x++){
+      const u = x / TILE, v = y / TILE;
+      let tex = 1;
+      if (ps > 0){
+        // 纸纹 = 3 个八度的平滑噪声（纤维） + 一点细颗粒
+        const pn = vnoise(u, v, 4) * 0.55 + vnoise(u, v, 9) * 0.3 + vnoise(u, v, 21) * 0.15;
+        const fine = grain[y * TILE + x] / 255;
+        const paper = clamp(pn * 0.85 + fine * 0.15, 0, 1);
+        tex *= 1 - ps * (1 - paper);
+      }
+      if (ss > 0){
+        const sn = grain[((y * 7 + 13) * TILE + (x * 11 + 5)) % (TILE * TILE)] / 255;
+        tex *= 1 - ss * sn * sn;                       // 边缘"扩散和噪点"
+      }
+      const i4 = (y * TILE + x) * 4;
+      d[i4] = 0; d[i4 + 1] = 0; d[i4 + 2] = 0;
+      d[i4 + 3] = Math.round(clamp(tex, 0, 1) * 255);
+    }
+  }
+  tileCtx.putImageData(img, 0, 0);
+  tileVersion++;
+}
+function patternFor(g){
+  if (!g.__tilePat || g.__tileVer !== tileVersion){
+    g.__tilePat = g.createPattern(dabTile, "repeat");
+    g.__tileVer = tileVersion;
+  }
+  return g.__tilePat;
+}
+function needTexture(prm){
+  return (prm.paperOn && prm.paperStrength > 0) || (prm.spreadNoise && prm.spreadNoiseStrength > 0);
+}
+/* 贴纹理用的临时小画布（只增不减，避免每次重建） */
+const dabCv = document.createElement("canvas");
+const dabCtx = dabCv.getContext("2d", { willReadFrequently: false });
+dabCv.width = 32; dabCv.height = 32;
+
+/* ── 6. 采样：只取 dab 附近一小块的平均色（绝不全画布 getImageData） ───── */
+const SAMPLE_OUT = [0, 0, 0, 0];
+const MAX_SAMPLE_PX = 64;                      // 采样半宽上限（CSS px）→ 大笔刷也不会一次读几十万像素
+function sampleAvg(g, st, cx, cy, half){
+  const cvs = g.canvas, d = st.dpr || 1;
+  let w = Math.round(half * 2 * d);
+  if (w < 2) w = 2;
+  let x0 = Math.round((cx - half) * d), y0 = Math.round((cy - half) * d);
+  x0 = clamp(x0, 0, Math.max(0, cvs.width - 2));
+  y0 = clamp(y0, 0, Math.max(0, cvs.height - 2));
+  w = Math.min(w, cvs.width - x0);
+  const h = Math.min(w, cvs.height - y0);
+  if (w < 2 || h < 2) return null;
+  if (g === compCtx) ensureCompBox(x0, y0, w, h);   // ★ 采样源 = 合成结果：按需只重合成这一小块 ✓
+  const data = g.getImageData(x0, y0, w, h).data;
+  let r = 0, gg = 0, b = 0, a = 0, n = 0;
+  for (let i = 0; i < data.length; i += 4){
+    const al = data[i + 3] / 255;
+    r += data[i] * al; gg += data[i + 1] * al; b += data[i + 2] * al; a += al; n++;
+  }
+  if (a <= 0.001){ SAMPLE_OUT[0] = 255; SAMPLE_OUT[1] = 255; SAMPLE_OUT[2] = 255; SAMPLE_OUT[3] = 0; return SAMPLE_OUT; }
+  SAMPLE_OUT[0] = r / a; SAMPLE_OUT[1] = gg / a; SAMPLE_OUT[2] = b / a; SAMPLE_OUT[3] = a / n;
+  return SAMPLE_OUT;
+}
+
+/* ── 7. 落一个笔尖（核心） ────────────────────────────────────────────── */
+let dabCount = 0;
+function makeStrokeState(dpr){
+  /* `stepR` = 算出 `step` 时用的那颗笔尖半径（**只给 HUD 的「步距 = ?r」用** ✓，不参与任何数值 ✓） */
+  return { dpr: dpr || 1, main: false, sampleCtx: null, last: null, carry: 0, step: 0, stepR: 0, dir: 0,
+           mix: [255, 255, 255], hasMix: false, alpha: 1, count: 0 };
+}
+/* texturedDab：把"纸纹/噪点贴图"按画布坐标对齐后与笔尖形状相乘，再上色 */
+function texturedDab(g, x, y, r, ratio, alpha, cr, cg, cb){
+  const size = Math.ceil(r * 2 * 1.15) + 4;
+  if (dabCv.width < size){ dabCv.width = size; dabCv.height = size; }
+  const s = Math.min(size, dabCv.width);
+  const g2 = dabCtx;
+  g2.setTransform(1, 0, 0, 1, 0, 0);
+  g2.globalCompositeOperation = "source-over";
+  g2.globalAlpha = 1;
+  g2.clearRect(0, 0, s, s);
+  const pat = patternFor(g2);
+  if (!pat) return false;
+  const ox = x - s / 2, oy = y - s / 2;
+  const tx = -(((ox % TILE) + TILE) % TILE), ty = -(((oy % TILE) + TILE) % TILE);
+  g2.save(); g2.translate(tx, ty);
+  g2.fillStyle = pat;
+  g2.fillRect(-tx, -ty, s, s);
+  g2.restore();
+  g2.globalCompositeOperation = "destination-in";     // 剪出笔尖形状
+  g2.beginPath();
+  g2.ellipse(s / 2, s / 2, Math.max(0.5, r), Math.max(0.5, r / ratio), 0, 0, Math.PI * 2);
+  g2.fillStyle = "#fff";
+  g2.fill();
+  g2.globalCompositeOperation = "source-in";          // 上色（保留纹理 alpha）
+  g2.fillStyle = "rgba(" + (cr | 0) + "," + (cg | 0) + "," + (cb | 0) + "," + clamp(alpha, 0, 1).toFixed(4) + ")";
+  g2.fillRect(0, 0, s, s);
+  g2.globalCompositeOperation = "source-over";
+  return true;
+}
+/* ── 笔尖半径 / 步距：**唯一口径**（`stamp()` 与 `walkTo()` 共用 ✓）──────────
+   病根（用户 2026-09-20 实机报的「**画出来是一排点**」✗，两处都在这）：
+   ① 原来上限是 `0.9 × 笔尖半径` —— 只保证"相邻笔尖勉强搭上"，
+      叠上 SizeJitter（这颗笔尖比基准小）就变成"珠子项链" ✗；
+   ② 步距一度用**基础半径**、笔尖却按**压感后的半径**画 ⇒ 轻按时步距 > 笔尖直径 ✗。
+   现在：① 半径只在这里算一次；② 步距按**这一颗笔尖自己的直径**算；
+        ③ 被"行进方向上的笔尖半径 × **0.4**"夹住（相邻笔尖至少重叠 ~60% ✓）——
+           这样 Spacing 调到 50%、压感把笔尖压多小，都**不可能**出现肉眼可见的断点 ✓。
+   ⚠️ `Spacing%` 仍然相对**笔尖直径**（SAI 口径 ✓），只是**上限被 0.4r 夹住** ⇒
+      往大调只会更密、**不可能成珠链** ✓。真想要"点状/散布"笔刷请用
+      **Scattering / Count / 散布类参数**（或以后加"允许断点"开关），**不靠大 Spacing** ✗。 */
+function nibRadius(prm, radius, pressure, sizeJit){
+  const jit = (sizeJit === undefined) ? 1 : sizeJit;
+  const base = Math.max(0.35, radius * (prm.Scaling / 100));
+  let r = base;
+  if (prm.pressureSize) r *= (prm.minSizePct / 100) + (1 - prm.minSizePct / 100) * Math.pow(pressure, prm.pressureCurve);
+  if (prm.AbsoluteSize === 1) r = Math.max(0.35, prm.ShapeSize * jit * 0.5);
+  else r *= jit;
+  return Math.max(0.35, r);
+}
+/* 这一颗笔尖该走多远才落下一颗（像素 ✓）：`Spacing%` 相对**它自己的直径** ✓ + **0.4r 护栏** ✓ */
+function dabStep(prm, st, radius, pressure, dirAngle){
+  const r = nibRadius(prm, radius, pressure);
+  if (st) st.stepR = r;                       // ← 只记数（给 HUD「步距 = ?r」），不影响任何数值 ✓
+  const bySpacing = r * 2 * (clamp(prm.Spacing, 1, 1000) / 100);
+  // 行进方向上的笔尖半径：圆 = r ✓；扁笔尖 = 椭圆在那条方向上的支撑半径 ✓
+  let ratio = 1;
+  if (prm.WxHRatio !== 0) ratio = prm.WxHRatio > 0 ? (100 / (100 - prm.WxHRatio)) : ((100 + prm.WxHRatio) / 100);
+  ratio = clamp(ratio, 0.05, 20);
+  const ry = r / ratio;
+  /* 角度控制只有两态：0 固定（用 Angle）/ 1 自动（跟随笔画方向 ✓）—— 本版**不做笔杆旋转** ✗ */
+  let ang = 0;
+  if (prm.AngleControl === 1) ang = dirAngle;
+  ang += prm.Angle * Math.PI / 180;
+  const rel = dirAngle - ang;
+  const along = 1 / Math.hypot(Math.cos(rel) / r, Math.sin(rel) / ry);
+  /* ★ 0.4 而不是 0.9：0.9r 只是"勉强搭上" ⇒ 叠上 SizeJitter 就是珠链 ✗ */
+  return Math.max(0.35, Math.min(bySpacing, along * 0.4));
+}
+function stamp(g, prm, st, x, y, radius, pressure, dirAngle){
+  const sizeJit = 1 + (prm.SizeJitter / 100) * rnd(-1, 1);
+  let r = nibRadius(prm, radius, pressure, sizeJit);
+  const spread = (prm.spreadNoise && prm.spreadNoiseStrength > 0) ? prm.spreadNoiseStrength / 100 : 0;
+  if (spread > 0) r *= 1 + spread * 0.4 * rnd(-1, 1);
+  r = Math.max(0.35, r);
+
+  // 角度：**只有两态** —— 0 固定（用 Angle）/ 1 自动（跟随笔画方向 ✓）；本版不做笔杆旋转 ✗
+  let ang;
+  if (prm.AngleControl === 1) ang = dirAngle;
+  else ang = 0;
+  ang += prm.Angle * Math.PI / 180 + (prm.AngleJitter / 100) * rnd(-Math.PI, Math.PI);
+
+  // W:H
+  let ratio = 1;
+  if (prm.WxHRatio !== 0) ratio = prm.WxHRatio > 0 ? (100 / (100 - prm.WxHRatio)) : ((100 + prm.WxHRatio) / 100);
+  ratio *= 1 + (prm.WxHJitter / 100) * rnd(-1, 1);
+  ratio = clamp(ratio, 0.05, 20);
+
+  // ── 工具层：浓度 / 水分量 / 混色 / 色延伸 ──
+  const erasing = prm.eraser === true;
+  let alpha = (prm.Opacity / 100) * (prm.density / 100);
+  if (prm.pressureAlpha) alpha *= (prm.minDensity / 100) + (1 - prm.minDensity / 100) * Math.pow(pressure, prm.pressureCurve);
+  const waterF = prm.water / 100;
+  alpha *= 1 - 0.55 * waterF;                      // 水分量越大 → 越淡
+  if (spread > 0) alpha *= 1 - spread * 0.45 * Math.random();
+  if (prm.keepOpacity && !erasing) alpha = 1;      // 单独画在笔画层，最后统一合成
+  alpha = clamp(alpha, 0, 1);
+
+  // ── 取样混色（只取 dab 附近 1~2 倍直径的小方块） ──
+  const wantMix = !erasing && (prm.blending > 0 || prm.water > 0 || prm.colorStretch > 0);
+  let mixR = 255, mixG = 255, mixB = 255, mixT = 0;
+  if (wantMix){
+    // 留 15% 本笔颜色：混色=100 时在纯白纸上也还看得见笔迹（不然采样全白 → 笔迹发白看不见）
+    mixT = clamp(prm.blending / 100 + 0.25 * waterF, 0, 1) * 0.85;
+    const half = clamp(r * (0.8 + 1.0 * waterF), 1, MAX_SAMPLE_PX);
+    const drag = r * (prm.colorStretch / 100) * 2.0;
+    const sx = x - Math.cos(dirAngle) * drag, sy = y - Math.sin(dirAngle) * drag;   // 沿笔画往后拖
+    const sg = st.sampleCtx || g;
+    const s = sampleAvg(sg, st, sx, sy, half);
+    if (s){
+      let sr = s[0], sg2 = s[1], sb = s[2], sa = s[3];
+      if (sa < 0.02){ sr = 255; sg2 = 255; sb = 255; }
+      if (prm.colorStretch > 0 && st.hasMix){
+        const k = 0.5 * (prm.colorStretch / 100);   // 把上一个笔尖的颜色继续带过去
+        sr = sr * (1 - k) + st.mix[0] * k;
+        sg2 = sg2 * (1 - k) + st.mix[1] * k;
+        sb = sb * (1 - k) + st.mix[2] * k;
+      }
+      mixR = sr; mixG = sg2; mixB = sb;
+    }
+  }
+
+  const hsl = hexToHsl(prm.color);
+  const n = Math.max(1, Math.round(prm.Count * (1 + (prm.CountJitter / 100) * rnd(-1, 1))));
+  const scatterAmp = r * (prm.Scattering / 100);
+  const useTex = needTexture(prm);
+  const op = erasing ? "destination-out" : "source-over";
+
+  g.save();
+  g.globalCompositeOperation = op;
+  for (let i = 0; i < n; i++){
+    let ox = 0, oy = 0;
+    if (scatterAmp > 0){
+      let mag, a;
+      if (prm.AllDirScattering === 1){ a = Math.random() * Math.PI * 2; mag = Math.random(); }
+      else { a = dirAngle + Math.PI / 2 + (Math.random() < 0.5 ? 0 : Math.PI); mag = Math.random(); }
+      if (prm.GaussianDistribution === 1) mag = Math.abs(gauss()) / 2.2;
+      mag = clamp(mag, 0, 1.6) * scatterAmp;
+      ox = Math.cos(a) * mag; oy = Math.sin(a) * mag;
+    }
+    if (spread > 0){ ox += (Math.random() - 0.5) * r * spread * 0.6; oy += (Math.random() - 0.5) * r * spread * 0.6; }
+    let px = x + ox, py = y + oy;
+    if (prm.IntegerPosition === 1){ px = Math.round(px); py = Math.round(py); }
+
+    let h = hsl.h, s = hsl.s, l = hsl.l;
+    const each = prm.ApplyToEachShape === 1;
+    if (each || i === 0){
+      if (prm.HueJitter) h += (prm.HueJitter / 100) * rnd(-180, 180);
+      if (prm.SaturationJitter) s += (prm.SaturationJitter / 100) * rnd(-1, 1);
+      if (prm.BrightnessJitter) l += (prm.BrightnessJitter / 100) * rnd(-0.5, 0.5);
+    }
+    let rgb = hslToRgb(h, s, l);
+    if (prm.ColJitter){                              // 前景↔背景（背景当白色）
+      const t = (prm.ColJitter / 100) * Math.random();
+      rgb = [255 * t + rgb[0] * (1 - t), 255 * t + rgb[1] * (1 - t), 255 * t + rgb[2] * (1 - t)];
+    }
+    let cr = rgb[0], cg = rgb[1], cb = rgb[2];
+    if (wantMix && mixT > 0){
+      cr = cr * (1 - mixT) + mixR * mixT;
+      cg = cg * (1 - mixT) + mixG * mixT;
+      cb = cb * (1 - mixT) + mixB * mixT;
+    }
+
+    if (useTex && !erasing && texturedDab(g, px, py, r, ratio, alpha, cr, cg, cb)){
+      g.save(); g.translate(px, py); g.rotate(ang);
+      const s2 = Math.min(dabCv.width, Math.ceil(r * 2 * 1.15) + 4);
+      g.drawImage(dabCv, -s2 / 2, -s2 / 2, s2, s2);
+      g.restore();
+    } else {
+      g.save();
+      g.translate(px, py);
+      g.rotate(ang);
+      g.beginPath();
+      g.ellipse(0, 0, r, r / ratio, 0, 0, Math.PI * 2);
+      g.fillStyle = "rgba(" + (cr | 0) + "," + (cg | 0) + "," + (cb | 0) + "," + alpha.toFixed(4) + ")";
+      g.fill();
+      g.restore();
+    }
+    if (wantMix){ st.mix[0] = cr; st.mix[1] = cg; st.mix[2] = cb; st.hasMix = true; }
+    st.count++;
+  }
+  g.restore();
+  dabCount = st.count;
+  if (st.main){
+    $("h_dabs").textContent = String(dabCount);
+    /* HUD「步距」：显示**实际步距 ÷ 这一颗笔尖的半径**（例如 `0.20r` ✓）——
+       用户一眼就能看出"是不是间距在作怪"✓。只读 `st`，不改任何数值 ✓ */
+    const hs = $("h_step");
+    if (hs) hs.textContent = (st.stepR > 0) ? ((st.step / st.stepR).toFixed(2) + "r") : "—";
+  }
+}
+
+/* ── 8. 沿路径按 Spacing 盖章（距离累加器 carry） ───────────────────────
+   ⚠️ 步距用 `dabStep()`（**与 `stamp()` 共用同一个半径口径** ✓）——
+   以前这里用的是传进来的**基础** `radius`，而 `stamp()` 画的是压感之后的半径 ✗：
+   轻按时笔尖只有基础半径的 15%、步距却按基础半径走 ⇒ 步距 > 笔尖直径 ⇒ **一排点** ✗（用户实机报的 ✓）。
+   `carry` 与 `st.step` 也是**同口径**的：carry 记"上一颗笔尖之后走了多远"，
+   st.step 记"上一颗笔尖那一档的步距" ⇒ 两者相减才是"还差多远落下一颗" ✓。 */
+function walkTo(g, prm, st, x, y, radius, pressure, dabFn){
+  if (!st.last){
+    dabFn(g, prm, st, x, y, radius, pressure, st.dir || 0);
+    st.last = { x: x, y: y }; st.carry = 0;
+    st.step = (dabFn === blurDab) ? Math.max(2, radius * 0.6) : dabStep(prm, st, radius, pressure, st.dir || 0);
+    return;
+  }
+  const dx = x - st.last.x, dy = y - st.last.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.05) return;
+  const dir = Math.atan2(dy, dx);
+  st.dir = dir;
+  if (dabFn === blurDab){                       // 模糊：步距单独放宽，别一个像素糊一次 ✓（照旧 ✓）
+    const step = Math.max(2, radius * 0.6);
+    let next = Math.max(0.35, step - st.carry);
+    let last = -1;
+    while (next <= dist){
+      const k = next / dist;
+      dabFn(g, prm, st, st.last.x + dx * k, st.last.y + dy * k, radius, pressure, dir);
+      last = next;
+      next += step;
+    }
+    st.carry = last < 0 ? st.carry + dist : dist - last;
+    if (st.carry >= step) st.carry = st.carry % step;
+    st.last = { x: x, y: y };
+    return;
+  }
+  // 画笔 / 橡皮：**每一颗笔尖的步距都由它自己那一点的半径算** ✓（口径见 `dabStep()` ✓）
+  let step = st.step || dabStep(prm, st, radius, pressure, dir);
+  let next = Math.max(0.35, step - st.carry);
+  let lastStampAt = -1;
+  while (next <= dist){
+    const k = next / dist;
+    const px = st.last.x + dx * k, py = st.last.y + dy * k;
+    dabFn(g, prm, st, px, py, radius, pressure, dir);
+    lastStampAt = next;
+    step = dabStep(prm, st, radius, pressure, dir);   // ★ 这一颗的半径 ⇒ 下一颗的步距 ✓
+    next += step;
+  }
+  st.step = step;
+  st.carry = lastStampAt < 0 ? st.carry + dist : dist - lastStampAt;
+  if (st.carry >= step) st.carry = st.carry % step;
+  st.last = { x: x, y: y };
+}
+
+/* ── 9. 模糊笔（真模糊：小方块 getImageData + 3×3 盒式模糊） ───────────── */
+let blurBuf = null;
+function blurDab(g, prm, st, x, y, radius, pressure, dirAngle){
+  const d = st.dpr || 1;
+  let w = Math.round(radius * 2 * d);
+  w = Math.min(w, 160);
+  let x0 = Math.round((x - radius) * d), y0 = Math.round((y - radius) * d);
+  x0 = clamp(x0, 0, Math.max(0, g.canvas.width - 2));
+  y0 = clamp(y0, 0, Math.max(0, g.canvas.height - 2));
+  w = Math.min(w, g.canvas.width - x0);
+  const h = Math.min(w, g.canvas.height - y0);
+  if (w < 3 || h < 3) return;
+  // 模糊笔压：0 = 恒定，100 = 模糊强度完全跟笔压走
+  const infl = prm.blurPressureOn ? (prm.blurPressure / 100) : 0;
+  const k = clamp(1 - infl + infl * pressure, 0, 1);
+  const img = g.getImageData(x0, y0, w, h);
+  const src = img.data;
+  const need = src.length;
+  if (!blurBuf || blurBuf.length < need) blurBuf = new Uint8ClampedArray(need);
+  const out = blurBuf;
+  for (let yy = 0; yy < h; yy++){
+    for (let xx = 0; xx < w; xx++){
+      let r = 0, gg = 0, b = 0, a = 0, c = 0;
+      for (let dy = -1; dy <= 1; dy++){
+        const py = yy + dy; if (py < 0 || py >= h) continue;
+        for (let dx = -1; dx <= 1; dx++){
+          const px = xx + dx; if (px < 0 || px >= w) continue;
+          const i = (py * w + px) * 4;
+          r += src[i]; gg += src[i + 1]; b += src[i + 2]; a += src[i + 3]; c++;
+        }
+      }
+      const o = (yy * w + xx) * 4;
+      const R = r / c, G = gg / c, B = b / c, A = a / c;
+      out[o]     = src[o]     * (1 - k) + R * k;
+      out[o + 1] = src[o + 1] * (1 - k) + G * k;
+      out[o + 2] = src[o + 2] * (1 - k) + B * k;
+      out[o + 3] = src[o + 3] * (1 - k) + A * k;
+    }
+  }
+  img.data.set(out.subarray(0, need));
+  g.putImageData(img, x0, y0);
+  st.count++;
+  dabCount = st.count;
+  if (st.main) $("h_dabs").textContent = String(dabCount);
+}
+
+/* ── 10. 油漆桶（扫描线洪水填充，一次性） ─────────────────────────────── */
+function floodFill(dx, dy, hex, tol){
+  const L = activeLayer();
+  if (!L) return null;
+  const x = Math.round(dx), y = Math.round(dy);
+  if (x < 0 || y < 0 || x >= DOCW || y >= DOCH) return null;
+  compositeAll();                            // 一次性操作：整张合成一次（之后按"一个脏矩形"增量 ✓）
+  const w = DOCW, h = DOCH;
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  const n = m ? parseInt(m[1], 16) : 0x000000;
+  const fr = (n >> 16) & 255, fg = (n >> 8) & 255, fb = n & 255, fa = 255;
+  const img = compCtx.getImageData(0, 0, w, h);
+  const u32 = new Uint32Array(img.data.buffer);
+  const idx0 = y * w + x;
+  const t0 = u32[idx0];
+  const tr = t0 & 255, tg = (t0 >> 8) & 255, tb = (t0 >> 16) & 255, ta = (t0 >>> 24) & 255;
+  const near = (v) => Math.abs((v & 255) - tr) <= tol && Math.abs(((v >> 8) & 255) - tg) <= tol &&
+                      Math.abs(((v >> 16) & 255) - tb) <= tol && Math.abs(((v >>> 24) & 255) - ta) <= tol;
+  let stack = new Uint32Array(1 << 16), sp = 0;
+  const push = (v) => { if (sp >= stack.length){ const ns = new Uint32Array(stack.length * 2); ns.set(stack); stack = ns; } stack[sp++] = v; };
+  push(idx0);
+  const mask = new Uint8Array(w * h);
+  let bx0 = w, by0 = h, bx1 = -1, by1 = -1, filled = 0;
+  while (sp > 0){
+    const i = stack[--sp];
+    if (mask[i] || !near(u32[i])) continue;
+    const yy = (i / w) | 0;
+    let xl = i % w, xr = xl;
+    while (xl > 0 && !mask[yy * w + xl - 1] && near(u32[yy * w + xl - 1])) { xl--; }
+    while (xr < w - 1 && !mask[yy * w + xr + 1] && near(u32[yy * w + xr + 1])) { xr++; }
+    for (let xx = xl; xx <= xr; xx++){
+      const j = yy * w + xx;
+      if (mask[j]) continue;
+      mask[j] = 1; filled++;
+      if (yy > 0){ const up = j - w; if (!mask[up] && near(u32[up])) push(up); }
+      if (yy < h - 1){ const dn = j + w; if (!mask[dn] && near(u32[dn])) push(dn); }
+    }
+    if (xl < bx0) bx0 = xl;
+    if (xr + 1 > bx1) bx1 = xr + 1;
+    if (yy < by0) by0 = yy;
+    if (yy + 1 > by1) by1 = yy + 1;
+  }
+  if (!filled) return null;
+  const r = rectClamp(bx0, by0, bx1, by1);
+  if (!r) return null;
+  const before = L.ctx.getImageData(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+  const out = new ImageData(r.x1 - r.x0, r.y1 - r.y0);
+  const od = out.data;
+  for (let yy = 0; yy < out.height; yy++){
+    for (let xx = 0; xx < out.width; xx++){
+      if (!mask[(yy + r.y0) * w + (xx + r.x0)]) continue;
+      const o = (yy * out.width + xx) * 4;
+      od[o] = fr; od[o + 1] = fg; od[o + 2] = fb; od[o + 3] = fa;
+    }
+  }
+  const tmp = document.createElement("canvas");
+  tmp.width = out.width; tmp.height = out.height;
+  tmp.getContext("2d").putImageData(out, 0, 0);
+  L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  L.ctx.globalCompositeOperation = "source-over";
+  L.ctx.globalAlpha = 1;
+  L.ctx.drawImage(tmp, r.x0, r.y0);
+  const after = L.ctx.getImageData(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+  pushHistory({ kind: "pixels", label: "油漆桶", layerId: L.id, x: r.x0, y: r.y0, before: before, after: after });
+  markCompDirty(r); invalidateView(r);
+  L.thumbDirty = true; renderThumbs();
+  return { rect: r, filled: filled };
+}
+
+/* ── 11. UI 构建 ──────────────────────────────────────────────────────── */
+uiNote = $("ui_note");
+let curCategory = DEFAULTS.category;
+let curVariantOf = {};
+
+/* 分类胶囊 */
+(function buildCats(){
+  const host = $("cats");
+  for (const row of CATEGORIES){
+    const div = document.createElement("div"); div.className = "catrow";
+    for (const c of row){
+      const b = document.createElement("button");
+      b.className = "cap"; b.textContent = c; b.dataset.cat = c; b.type = "button";
+      b.addEventListener("click", () => {
+        curCategory = c; P.category = c; markCats();
+        note("分类切到「" + c + "」：本页所有分类共用同一套工具（只切高亮，不分家）");
+      });
+      div.appendChild(b);
+    }
+    host.appendChild(div);
+  }
+})();
+function markCats(){
+  const all = document.querySelectorAll("#cats .cap");
+  for (let i = 0; i < all.length; i++) all[i].classList.toggle("on", all[i].dataset.cat === curCategory);
+}
+
+/* 工具网格 */
+(function buildTools(){
+  const host = $("tools");
+  for (const t of TOOLS){
+    const b = document.createElement("button");
+    b.className = "tool"; b.type = "button"; b.dataset.tool = t.id;
+    b.title = t.name + "（" + t.kind + "）";
+    b.innerHTML = iconSvg(t.icon) + '<span class="tn">' + t.name + '</span><span class="tri" title="变体"></span>';
+    b.addEventListener("click", () => selectTool(t.id));
+    const tri = b.querySelector(".tri");
+    tri.addEventListener("click", (ev) => { ev.stopPropagation(); ev.preventDefault(); openVariantPop(tri, t); });
+    host.appendChild(b);
+  }
+})();
+function markTools(){
+  const all = document.querySelectorAll("#tools .tool");
+  for (let i = 0; i < all.length; i++) all[i].classList.toggle("on", all[i].dataset.tool === P.toolId);
+}
+/* 整套参数装进当前笔：DEFAULTS 打底 + patch 覆盖；用户级偏好（颜色/稳定器/混合模式/分类/当前工具）保留 */
+const KEEP_UI_KEYS = ["color", "stabilize", "blendMode", "category", "toolId", "presetId"];
+function applyFull(patch){
+  const base = Object.assign({}, DEFAULTS, patch || {});
+  for (const k of KEEP_UI_KEYS){
+    if (!(patch && (k in patch))) base[k] = P[k];
+  }
+  Object.assign(P, base);
+}
+function selectTool(id){
+  const t = toolById(id);
+  P.toolId = id;
+  if (t.kind === "eraser") P.eraser = true; else P.eraser = false;
+  applyFull(t.patch);
+  P.toolId = id;
+  P.eraser = (t.kind === "eraser");
+  markTools(); syncUI(); renderBar();
+  $("h_tool").textContent = t.name;
+  const k = t.kind;
+  if (k === "dab") note("已选「" + t.name + "」：盖笔尖类，参数已按该工具重置（SAI 里每个工具也各有自己的设置）");
+  else if (k === "eraser") note("已选「橡皮擦」：真的能擦（destination-out）");
+  else if (k === "blur") note("已选「模糊」：真的在 dab 处做盒式模糊；勾「模糊笔压」后笔压越大越糊");
+  else if (k === "bucket") note("已选「油漆桶」：画布上点一下 = 洪水填充当前颜色（容差 40）");
+  else if (k === "select") note("已选「" + t.name + "」：⚠ 选区功能本页未实现，只切换工具选中态，不会在画布上留下痕迹");
+  else if (k === "stub") note("已选「" + t.name + "」：⚠ 本页未实现该笔迹，只切换工具选中态");
+  const v = curVariantOf[id];
+  if (v) note(uiNote.textContent + "；当前变体：" + v);
+  $("tool_tip").textContent = "当前工具：" + t.name + "（kind=" + t.kind + "）" + (v ? " · 变体：" + v : "");
+}
+
+/* 变体弹层 */
+const vpop = $("vpop");
+function openVariantPop(anchor, t){
+  const r = anchor.getBoundingClientRect();
+  vpop.innerHTML = '<div class="vh">' + t.name + ' · 变体（占位）</div>';
+  for (const v of VARIANTS){
+    const b = document.createElement("button");
+    b.className = "vp"; b.type = "button"; b.textContent = v;
+    b.addEventListener("click", () => {
+      curVariantOf[t.id] = v;
+      note("工具「" + t.name + "」切到" + v + "（占位：参数暂与主工具相同，只是记住选择）");
+      $("tool_tip").textContent = "当前工具：" + t.name + " · 变体：" + v;
+      vpop.style.display = "none";
+    });
+    vpop.appendChild(b);
+  }
+  vpop.style.display = "block";
+  const w = vpop.offsetWidth, h = vpop.offsetHeight;
+  vpop.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, r.right - w)) + "px";
+  vpop.style.top = Math.min(window.innerHeight - h - 4, r.bottom + 4) + "px";
+}
+document.addEventListener("pointerdown", (e) => { if (!vpop.contains(e.target) && !(e.target.className === "tri")) vpop.style.display = "none"; });
+
+/* 预设网格（2 列 + 真预览） */
+(function buildPresets(){
+  const host = $("presets");
+  for (const pr of PRESET_LIST){
+    const c = document.createElement("div");
+    c.className = "pcell"; c.dataset.pid = pr.id; c.title = pr.name;
+    c.innerHTML = '<canvas></canvas><div class="pname">' + pr.name + '</div><span class="tri" title="变体"></span>';
+    c.addEventListener("click", () => applyPreset(pr.id));
+    const tri = c.querySelector(".tri");
+    tri.addEventListener("click", (ev) => {
+      ev.stopPropagation(); ev.preventDefault();
+      openPresetVariants(tri, pr);
+    });
+    host.appendChild(c);
+  }
+})();
+function openPresetVariants(anchor, pr){
+  const r = anchor.getBoundingClientRect();
+  vpop.innerHTML = '<div class="vh">' + pr.name + ' · 变体（占位）</div>';
+  for (const v of VARIANTS){
+    const b = document.createElement("button");
+    b.className = "vp"; b.type = "button"; b.textContent = v;
+    b.addEventListener("click", () => { note("预设「" + pr.name + "」切到" + v + "（占位：参数暂与主预设相同）"); vpop.style.display = "none"; });
+    vpop.appendChild(b);
+  }
+  vpop.style.display = "block";
+  const w = vpop.offsetWidth, h = vpop.offsetHeight;
+  vpop.style.left = Math.max(4, Math.min(window.innerWidth - w - 4, r.right - w)) + "px";
+  vpop.style.top = Math.min(window.innerHeight - h - 4, r.bottom + 4) + "px";
+}
+function markPresets(){
+  const all = document.querySelectorAll("#presets .pcell");
+  for (let i = 0; i < all.length; i++) all[i].classList.toggle("on", all[i].dataset.pid === P.presetId);
+}
+function presetParams(pr){
+  const o = Object.assign({}, DEFAULTS, pr.patch || {});
+  if (pr.tool) o.__tool = pr.tool;
+  return o;
+}
+function applyPreset(id){
+  let pr = null;
+  for (const x of PRESET_LIST) if (x.id === id) pr = x;
+  if (!pr) return;
+  applyFull(pr.patch);                                  // DEFAULTS 打底 + 预设整套覆盖
+  if (pr.tool) P.toolId = pr.tool;                      // 模糊类预设会把工具切到「模糊」
+  P.eraser = (toolById(P.toolId).kind === "eraser");
+  P.presetId = id;
+  syncUI(); renderBar();
+  note("已应用预设「" + pr.name + "」：整套参数装进当前笔" + (pr.tool ? "（工具切到 " + toolById(pr.tool).name + "）" : ""));
+}
+
+/* 参数控件（工具层） */
+const CTRLS = [];
+function addSlider(spec){
+  const host = spec.host;
+  const row = document.createElement("div");
+  row.className = "prm" + (spec.indent ? " indent" : "");
+  row.innerHTML =
+    '<div class="pl">' +
+      '<span class="pn">' + spec.label + '</span>' +
+      '<input type="number" class="pnum" id="num_' + spec.key + '" min="' + spec.min + '" max="' + spec.max + '" step="' + spec.step + '">' +
+      '<span class="pu">' + (spec.unit || "") + '</span>' +
+      (spec.extra || "") +
+    '</div>' +
+    '<div class="prow"><input type="range" class="pr" id="rng_' + spec.key + '" min="' + spec.min + '" max="' + spec.max + '" step="' + spec.step + '">' +
+    '<span class="pv" id="v_' + spec.key + '"></span></div>';
+  host.appendChild(row);
+  const o = {
+    key: spec.key, min: spec.min, max: spec.max, unit: spec.unit || "", group: spec.group || "tool",
+    range: row.querySelector("#rng_" + spec.key), num: row.querySelector("#num_" + spec.key),
+    val: row.querySelector("#v_" + spec.key), chk: null, fmt: spec.fmt || null,
+  };
+  CTRLS.push(o);
+  const set = (v, fromNum) => {
+    let nv = Number(v);
+    if (!isFinite(nv)) return;
+    nv = clamp(nv, o.min, o.max);
+    P[o.key] = nv;
+    o.range.value = String(nv);
+    if (!fromNum) o.num.value = String(nv);
+    o.val.textContent = o.fmt ? o.fmt(nv) : (Math.round(nv * 100) / 100 + o.unit);
+    onParamChanged(o.key);
+  };
+  o.set = set;
+  o.range.addEventListener("input", () => set(o.range.value, false));
+  o.num.addEventListener("input", () => {
+    const raw = o.num.value;
+    if (raw === "" || raw === "-" || raw === ".") return;
+    set(raw, true);
+  });
+  o.num.addEventListener("change", () => { o.num.value = String(P[o.key]); });
+  return o;
+}
+function addCheck(spec){
+  const host = spec.host;
+  const row = document.createElement("div");
+  row.className = "prm";
+  row.innerHTML = '<div class="pl"><label class="ckl"><input type="checkbox" id="ck_' + spec.key + '">' + spec.label + '</label></div>';
+  host.appendChild(row);
+  const o = { key: spec.key, chk: row.querySelector("#ck_" + spec.key), range: null, num: null, val: null, group: spec.group || "tool" };
+  CTRLS.push(o);
+  o.chk.addEventListener("change", () => {
+    P[o.key] = o.chk.checked;
+    if (o.key === "keepOpacity") { const b = $("tgl_keepOpacity"); if (b) b.classList.toggle("on", o.chk.checked); }
+    onParamChanged(o.key);
+  });
+  return o;
+}
+function addToggle(spec){
+  const host = spec.host;
+  const row = document.createElement("div");
+  row.className = "prm";
+  row.innerHTML = '<button type="button" class="tglbtn" id="tgl_' + spec.key + '">' + spec.label + '：关</button>';
+  host.appendChild(row);
+  const o = { key: spec.key, tgl: row.querySelector("#tgl_" + spec.key), range: null, num: null, val: null, chk: null, group: spec.group || "tool" };
+  CTRLS.push(o);
+  o.tgl.addEventListener("click", () => {
+    P[o.key] = !P[o.key];
+    o.tgl.textContent = spec.label + "：" + (P[o.key] ? "开" : "关");
+    o.tgl.classList.toggle("on", !!P[o.key]);
+    onParamChanged(o.key);
+  });
+  return o;
+}
+function addSelect(spec){
+  const host = spec.host;
+  const row = document.createElement("div");
+  row.className = "prm";
+  row.innerHTML = '<div class="pl"><span class="pn">' + spec.label + '</span></div>' +
+    '<div class="prow"><select id="sel_' + spec.key + '" style="flex:1;background:#14161b;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:11.5px">' +
+    spec.options + '</select></div>' +
+    (spec.note ? '<div class="tip">' + spec.note + '</div>' : '');
+  host.appendChild(row);
+  const o = { key: spec.key, sel: row.querySelector("#sel_" + spec.key), range: null, num: null, val: null, chk: null, group: spec.group || "resource" };
+  CTRLS.push(o);
+  o.sel.addEventListener("change", () => { P[o.key] = Number(o.sel.value); onParamChanged(o.key); });
+  return o;
+}
+
+/* 工具层参数区 */
+const toolHost = $("params");
+addSlider({ host: toolHost, key: "size", label: "画笔大小", min: SIZE_MIN, max: SIZE_MAX, step: 0.1, unit: "px", fmt: (v) => (Math.round(v * 10) / 10) + " px" });
+addSlider({ host: toolHost, key: "minSizePct", label: "最小大小", min: 0, max: 100, step: 1, unit: "%" });
+addSlider({ host: toolHost, key: "density", label: "画笔浓度", min: 0, max: 100, step: 1, unit: "" });
+addSlider({ host: toolHost, key: "minDensity", label: "最小浓度", min: 0, max: 100, step: 1, unit: "%" });
+addCheck({ host: toolHost, key: "spreadNoise", label: "扩散和噪点" });
+addSlider({ host: toolHost, key: "spreadNoiseStrength", label: "强度", min: 0, max: 100, step: 1, unit: "%", indent: true });
+addCheck({ host: toolHost, key: "paperOn", label: "画用纸（纸纹）" });
+addSlider({ host: toolHost, key: "paperStrength", label: "强度", min: 0, max: 100, step: 1, unit: "%", indent: true });
+addSlider({ host: toolHost, key: "blending", label: "混色", min: 0, max: 100, step: 1, unit: "",
+  extra: '<button type="button" class="lockb" id="lock_blendLock" title="锁定混色（只切锁定态）">🔓</button>' });
+addSlider({ host: toolHost, key: "water", label: "水分量", min: 0, max: 100, step: 1, unit: "" });
+addSlider({ host: toolHost, key: "colorStretch", label: "色延伸", min: 0, max: 100, step: 1, unit: "" });
+const tglKeep = addToggle({ host: toolHost, key: "keepOpacity", label: "保持不透明度" });
+addCheck({ host: toolHost, key: "blurPressureOn", label: "模糊笔压（笔压→模糊强度）" });
+addSlider({ host: toolHost, key: "blurPressure", label: "模糊笔压量", min: 0, max: 100, step: 1, unit: "%", indent: true });
+
+/* 应用层：压感曲线 / 稳定器（原有的两条，改成走同一套控件） */
+const penHost = $("pen_params");
+addSlider({ host: penHost, key: "pressureCurve", label: "压感曲线", min: 0.3, max: 3, step: 0.05, unit: "", group: "app" });
+addSlider({ host: penHost, key: "stabilize", label: "稳定器", min: 0, max: 95, step: 1, unit: "%", group: "app" });
+
+$("lock_blendLock").addEventListener("click", () => {
+  P.blendLock = !P.blendLock;
+  const b = $("lock_blendLock");
+  b.textContent = P.blendLock ? "🔒" : "🔓";
+  b.classList.toggle("on", P.blendLock);
+  note("混色锁定：" + (P.blendLock ? "已锁（切工具/预设不会改动混色）" : "已解锁"));
+});
+
+/* 资源层参数区（折叠，参数一个不删） */
+const saiHost = $("sai_params");
+const RES_SPECS = [
+  ["Opacity", "Opacity 浓度", 0, 100, 1, ""],
+  /* ⚠ 角度控制**砍成两态**（2026-09-20 用户口径「取消旋转功能」✓）：
+     0 固定 / 1 自动（跟随笔画方向）—— SAI 的「2 笔杆方向」是给**笔杆旋转 twist** 用的，
+     旋转整套拿掉后它没有输入源、只会空转 ✗ ⇒ 本版明确不做，UI 上留一句小字说明 ✓。
+     Kotlin 那边 `ComicModeScreen` 的 `nibRatio/angleControl` **暂不动**（这一批只改网页 ✓），
+     等这批验收完再把 Kotlin 侧也收成 0/1 两态即可 ✓。 */
+  ["AngleControl", "AngleControl 角度控制", 0, 1, 1, "", ["0 固定", "1 自动"],
+   "只有两态：0 固定（用 Angle）/ 1 自动（跟随笔画方向）。SAI 的「2 笔杆方向」＝笔杆旋转，本版不做 ✗。"],
+  ["Angle", "Angle 角度", -180, 180, 1, ""],
+  ["AngleJitter", "AngleJitter 角度抖动", 0, 100, 1, "%"],
+  ["Scaling", "Scaling 倍率", 0, 200, 1, "%"],
+  ["SizeJitter", "SizeJitter 大小抖动", 0, 100, 1, "%"],
+  ["Spacing", "Spacing 间距", 1, 200, 1, "%"],
+  ["Scattering", "Scattering 散布", 0, 300, 1, "%"],
+  ["HighQualitySampling", "HighQualitySampling 高品质", 0, 1, 1, "", ["0 速度优先", "1 品质优先"]],
+  ["ShapeSize", "ShapeSize 图案大小", 1, 5000, 1, "px"],
+  ["AbsoluteSize", "AbsoluteSize 绝对大小", 0, 1, 1, "", ["0 画笔大小×倍率", "1 用图案大小"]],
+  ["WxHRatio", "WxHRatio 纵横比", -100, 100, 1, ""],
+  ["WxHJitter", "WxHJitter 比例抖动", 0, 100, 1, "%"],
+  ["Count", "Count 计数", 1, 20, 1, ""],
+  ["CountJitter", "CountJitter 计数抖动", 0, 100, 1, "%"],
+  ["AllDirScattering", "AllDir 全方向散布", 0, 1, 1, "", ["0 仅直交方向", "1 全方向"]],
+  ["GaussianDistribution", "Gaussian 高斯分布", 0, 1, 1, "", ["0 一致密度", "1 越远越稀"]],
+  ["IntegerPosition", "IntegerPosition 整数坐标", 0, 1, 1, "", ["0 已知坐标", "1 对齐像素边界"]],
+  ["ColJitter", "ColJitter 前景→背景", 0, 100, 1, "%"],
+  ["HueJitter", "HueJitter 色相抖动", 0, 100, 1, "%"],
+  ["SaturationJitter", "SaturationJitter 饱和抖动", 0, 100, 1, "%"],
+  ["BrightnessJitter", "BrightnessJitter 亮度抖动", 0, 100, 1, "%"],
+  ["ApplyToEachShape", "ApplyToEachShape 作用粒度", 0, 1, 1, "", ["0 每个笔画", "1 每个笔尖"]],
+];
+for (const sp of RES_SPECS){
+  if (sp[6]){
+    let opts = "";
+    for (const o of sp[6]) opts += '<option value="' + o.split(" ")[0] + '">' + o + '</option>';
+    addSelect({ host: saiHost, key: sp[0], label: sp[1], options: opts, group: "resource", note: sp[7] || null });
+  } else {
+    addSlider({ host: saiHost, key: sp[0], label: sp[1], min: sp[2], max: sp[3], step: sp[4], unit: sp[5], group: "resource",
+      fmt: sp[0] === "WxHRatio" ? (v) => {
+        if (v === 0) return "100:100";
+        const r = v > 0 ? (100 / (100 - v)) : (100 + v) / 100;
+        return v > 0 ? r.toFixed(1) + ":1" : "1:" + (1 / r).toFixed(1);
+      } : null });
+  }
+}
+
+/* 大小圆点阵 */
+(function buildDots(){
+  const host = $("dots");
+  const L0 = Math.log(SIZE_MIN), L1 = Math.log(SIZE_MAX);
+  for (const row of SIZE_GRID){
+    for (const v of row){
+      const b = document.createElement("button");
+      b.className = "dot"; b.type = "button"; b.dataset.size = String(v); b.title = v + " px";
+      const d = clamp(4 + 15 * (Math.log(v) - L0) / (L1 - L0), 4, 19);
+      b.innerHTML = '<i style="width:' + d.toFixed(1) + 'px;height:' + d.toFixed(1) + 'px"></i>';
+      b.addEventListener("click", () => { setSize(v); note("画笔大小 = " + v + " px"); });
+      host.appendChild(b);
+    }
+  }
+})();
+function markDots(){
+  const all = document.querySelectorAll("#dots .dot");
+  for (let i = 0; i < all.length; i++){
+    all[i].classList.toggle("on", Math.abs(Number(all[i].dataset.size) - P.size) < 0.001);
+  }
+}
+function setSize(v){
+  P.size = clamp(v, SIZE_MIN, SIZE_MAX);
+  for (const o of CTRLS) if (o.key === "size" && o.set) o.set(P.size, false);
+  markDots();
+  onParamChanged("size");
+}
+
+/* ── 11b. 图层区（右栏；窗口 <1100px 折到画布下方 ✓） ─────────────────── */
+const rowMap = {}, thumbMap = {};
+function buildLayerPanel(){
+  const host = $("layers");
+  if (!host) return;
+  host.innerHTML = "";
+  for (const k in rowMap) delete rowMap[k];
+  for (const k in thumbMap) delete thumbMap[k];
+  for (let i = layers.length - 1; i >= 0; i--){          // 顶层排在上面
+    const L = layers[i];
+    const row = document.createElement("div");
+    row.className = "lrow" + (L.id === activeId ? " on" : "");
+    row.dataset.id = String(L.id);
+    row.title = L.name + "（点一行 = 选中这一层，画笔只画在这里）";
+    const tc = document.createElement("canvas");
+    tc.className = "lthumb";
+    row.appendChild(tc);
+    const meta = document.createElement("div"); meta.className = "lmeta";
+    const top = document.createElement("div"); top.className = "ltop";
+    const nm = document.createElement("span"); nm.className = "lname"; nm.textContent = L.name;
+    const eye = document.createElement("button");
+    eye.type = "button"; eye.className = "leye" + (L.visible ? "" : " off");
+    eye.textContent = L.visible ? "◉" : "○";
+    eye.title = "显示 / 隐藏这一层";
+    eye.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      L.visible = !L.visible;
+      eye.textContent = L.visible ? "◉" : "○";
+      eye.classList.toggle("off", !L.visible);
+      markCompDirty(null); invalidateView(null);
+      note("图层「" + L.name + "」" + (L.visible ? "显示" : "隐藏") + "了（合成立刻跟着变）");
+    });
+    top.appendChild(nm); top.appendChild(eye);
+    const orow = document.createElement("div"); orow.className = "loprow";
+    const sl = document.createElement("input");
+    sl.type = "range"; sl.className = "lop"; sl.min = "0"; sl.max = "100"; sl.step = "1";
+    sl.value = String(Math.round(L.opacity * 100));
+    const ov = document.createElement("span");
+    ov.className = "lopv"; ov.textContent = Math.round(L.opacity * 100) + "%";
+    sl.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    sl.addEventListener("click", (ev) => ev.stopPropagation());
+    sl.addEventListener("input", (ev) => {
+      ev.stopPropagation();
+      L.opacity = Number(sl.value) / 100;
+      ov.textContent = sl.value + "%";
+      markCompDirty(null); invalidateView(null);
+      updateDocInfo();
+    });
+    orow.appendChild(sl); orow.appendChild(ov);
+    meta.appendChild(top); meta.appendChild(orow);
+    row.appendChild(meta);
+    row.addEventListener("click", () => selectLayer(L.id));
+    host.appendChild(row);
+    rowMap[L.id] = row; thumbMap[L.id] = tc;
+    L.thumbDirty = true;
+  }
+  renderThumbs();
+  updateUndoInfo();
+}
+function selectLayer(id){
+  if (activeId === id) return;
+  activeId = id;
+  for (const k in rowMap) rowMap[k].classList.toggle("on", Number(k) === id);
+  updateDocInfo();
+  const L = layerById(id);
+  if (L) note("切到图层「" + L.name + "」：之后画笔只画在这一层上 ✓");
+}
+function renderThumb(L){
+  const c = thumbMap[L.id];
+  if (!c) return;
+  const tw = 48, th = Math.max(1, Math.round(tw * DOCH / DOCW));
+  if (c.width !== tw || c.height !== th){ c.width = tw; c.height = th; }
+  c.style.width = tw + "px"; c.style.height = th + "px";
+  const g = c.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.globalAlpha = 1;
+  g.clearRect(0, 0, tw, th);
+  g.fillStyle = "#3a3f49"; g.fillRect(0, 0, tw, th);       // 缩略图底（透明处看得见）
+  g.drawImage(L.cv, 0, 0, tw, th);                          // 真把这一层缩下来画 ✓
+  /* 边框改成 CSS 内阴影（见 .lthumb 的 box-shadow ✓）：本文件里**再也不出现任何
+     "描边矩形"调用** ✗ —— 用户 2026-09-20 报的"方块"就是从"画矩形轮廓"这类调用进来的 ✓ */
+  L.thumbDirty = false;
+}
+function renderThumbs(){
+  for (let i = 0; i < layers.length; i++) if (layers[i].thumbDirty) renderThumb(layers[i]);
+}
+function layerEmpty(L){
+  const d = L.ctx.getImageData(0, 0, DOCW, DOCH).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i] !== 0) return false;
+  return true;
+}
+$("b_lnew").addEventListener("click", () => {
+  commitDocOp(() => {
+    const L = makeLayer("图层 " + nextLayerId);
+    const i = Math.max(0, layerIndex(activeId));
+    layers.splice(i + 1, 0, L);
+    activeId = L.id;
+  }, "新建图层");
+  note("新建图层：画笔画在选中层上 ✓");
+});
+$("b_ldup").addEventListener("click", () => {
+  const src = activeLayer();
+  if (!src) return;
+  commitDocOp(() => {
+    const L = makeLayer(src.name + " 副本");
+    L.opacity = src.opacity; L.visible = src.visible;
+    L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    L.ctx.globalCompositeOperation = "source-over";
+    L.ctx.globalAlpha = 1;
+    L.ctx.drawImage(src.cv, 0, 0);
+    layers.splice(layerIndex(src.id) + 1, 0, L);
+    activeId = L.id;
+  }, "复制图层");
+  note("已复制图层「" + src.name + "」");
+});
+$("b_ldel").addEventListener("click", () => {
+  const L = activeLayer();
+  if (!L) return;
+  if (layers.length <= 1){ note("只剩一层：删不了（要清空请用「清空层」）"); return; }
+  const nm = L.name;
+  commitDocOp(() => {
+    const i = layerIndex(L.id);
+    layers.splice(i, 1);
+    activeId = layers[Math.min(i, layers.length - 1)].id;
+  }, "删除图层");
+  note("已删除图层「" + nm + "」（Ctrl+Z 能撤销 ✓）");
+});
+function moveLayer(dir){
+  const L = activeLayer();
+  if (!L) return;
+  const i = layerIndex(L.id), j = i + dir;
+  if (j < 0 || j >= layers.length){ note("已经在最" + (dir > 0 ? "上" : "下") + "一层了"); return; }
+  commitDocOp(() => { layers.splice(i, 1); layers.splice(j, 0, L); activeId = L.id; },
+              dir > 0 ? "上移图层" : "下移图层");
+  note("图层「" + L.name + "」" + (dir > 0 ? "上移" : "下移") + "了一层");
+}
+$("b_lup").addEventListener("click", () => moveLayer(1));
+$("b_ldown").addEventListener("click", () => moveLayer(-1));
+$("b_lmerge").addEventListener("click", () => {
+  const L = activeLayer();
+  if (!L) return;
+  const i = layerIndex(L.id);
+  if (i <= 0){ note("下面没有图层了，合并不了"); return; }
+  const D = layers[i - 1], nm = L.name, dn = D.name;
+  commitDocOp(() => {
+    D.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    D.ctx.globalCompositeOperation = "source-over";
+    D.ctx.globalAlpha = clamp(L.opacity, 0, 1);
+    D.ctx.drawImage(L.cv, 0, 0);
+    D.ctx.globalAlpha = 1;
+    layers.splice(i, 1);
+    activeId = D.id;
+  }, "合并向下");
+  note("已把「" + nm + "」合并到「" + dn + "」");
+});
+function clearActiveLayer(){
+  const L = activeLayer();
+  if (!L) return;
+  if (layerEmpty(L)){ note("图层「" + L.name + "」本来就是空的"); return; }
+  const before = L.ctx.getImageData(0, 0, DOCW, DOCH);
+  L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  L.ctx.globalCompositeOperation = "source-over";
+  L.ctx.globalAlpha = 1;
+  L.ctx.clearRect(0, 0, DOCW, DOCH);
+  const after = L.ctx.getImageData(0, 0, DOCW, DOCH);
+  pushHistory({ kind: "pixels", label: "清空层", layerId: L.id, x: 0, y: 0, before: before, after: after });
+  markCompDirty(null);
+  invalidateView(null);
+  L.thumbDirty = true; renderThumbs();
+  note("清空图层「" + L.name + "」（可撤销）");
+}
+
+/* ── 12. 参数变化 → 重画预览条 / 重建纸纹 ─────────────────────────────── */
+let barDirty = false;
+function onParamChanged(key){
+  if (key === "paperOn" || key === "paperStrength" || key === "spreadNoise" || key === "spreadNoiseStrength") rebuildTile();
+  if (key === "size") markDots();
+  if (key === "blendMode") markBlendNote();
+  if (key === "keepOpacity"){ const b = $("tgl_keepOpacity"); if (b){ b.textContent = "保持不透明度：" + (P.keepOpacity ? "开" : "关"); b.classList.toggle("on", !!P.keepOpacity); } }
+  if (!barDirty){
+    barDirty = true;
+    requestAnimationFrame(() => { barDirty = false; renderBar(); });
+  }
+}
+function markBlendNote(){
+  const el = $("blend_hint");
+  const sel = $("blendmode");
+  const v = sel.value;
+  el.textContent = (v === "normal" || v === "multiply") ? "已实现：" + (v === "normal" ? "正常" : "正片叠底")
+    : "⚠「" + sel.options[sel.selectedIndex].text + "」未实现 → 实际按「正常」合成";
+}
+
+/* ── 13. 预览绘制（预设格 / 当前笔刷条；都是真画，不是图片） ───────────── */
+function drawDemoStroke(g, prm, st, w, h, color, yFrac, ampFrac, radius){
+  const p2 = Object.assign({}, prm, { color: color });
+  const N = 26;
+  let prev = null;
+  for (let i = 0; i <= N; i++){
+    const t = i / N;
+    const x = w * 0.06 + w * 0.88 * t;
+    const y = h * yFrac - Math.sin(t * Math.PI) * h * ampFrac;
+    const p = 0.1 + 0.9 * Math.sin(t * Math.PI);
+    if (prev) st.dir = Math.atan2(y - prev[1], x - prev[0]);
+    if (blurFactorFor(prm)) walkTo(g, p2, st, x, y, radius, p, blurDab);
+    else walkTo(g, p2, st, x, y, radius, p, stamp);
+    prev = [x, y];
+  }
+}
+function blurFactorFor(prm){ return prm.__tool === "blur"; }
+function previewRadiusFor(prm, h){
+  return clamp(1.4 + prm.size * 0.085, 1.4, Math.max(3, h * 0.42));
+}
+function renderPresetPreviews(){
+  const all = document.querySelectorAll("#presets .pcell");
+  for (let i = 0; i < all.length; i++){
+    const cell = all[i];
+    let pr = null;
+    for (const x of PRESET_LIST) if (x.id === cell.dataset.pid) pr = x;
+    if (!pr) continue;
+    const cvs = cell.querySelector("canvas");
+    const cssW = Math.max(40, cvs.clientWidth || cell.clientWidth - 6);
+    const cssH = 22;
+    cvs.width = Math.round(cssW * PREVIEW_DPR);
+    cvs.height = Math.round(cssH * PREVIEW_DPR);
+    const g = cvs.getContext("2d", { willReadFrequently: true });
+    g.setTransform(PREVIEW_DPR, 0, 0, PREVIEW_DPR, 0, 0);
+    g.globalCompositeOperation = "source-over";
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, cssW, cssH);
+    const prm = presetParams(pr);
+    const st = makeStrokeState(PREVIEW_DPR);
+    const r = previewRadiusFor(prm, cssH);
+    drawDemoStroke(g, prm, st, cssW, cssH, "#22262e", 0.78, 0.52, r);
+  }
+}
+function renderBar(){
+  const cvs = $("bar"), box = $("barwrap");
+  const cssW = Math.max(80, (box.clientWidth || 300) - 2);
+  const cssH = Math.max(20, (box.clientHeight || 44) - 2);
+  cvs.width = Math.round(cssW * PREVIEW_DPR);
+  cvs.height = Math.round(cssH * PREVIEW_DPR);
+  cvs.style.width = cssW + "px"; cvs.style.height = cssH + "px";
+  const g = cvs.getContext("2d", { willReadFrequently: true });
+  g.setTransform(PREVIEW_DPR, 0, 0, PREVIEW_DPR, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, cssW, cssH);
+  const r = clamp(2 + P.size * 0.16, 2, cssH * 0.45);
+  const st1 = makeStrokeState(PREVIEW_DPR);
+  drawDemoStroke(g, P, st1, cssW, cssH, "#3fae6a", 0.60, 0.30, r);
+  const st2 = makeStrokeState(PREVIEW_DPR);
+  drawDemoStroke(g, P, st2, cssW, cssH, "#e08a2e", 0.40, 0.34, r);
+}
+
+/* ── 14. syncUI ───────────────────────────────────────────────────────── */
+function syncUI(){
+  for (const o of CTRLS){
+    if (o.range){
+      const v = Number(P[o.key]);
+      o.range.value = String(v);
+      o.num.value = String(Math.round(v * 100) / 100);
+      o.val.textContent = o.fmt ? o.fmt(v) : (Math.round(v * 100) / 100 + o.unit);
+    } else if (o.chk){
+      o.chk.checked = !!P[o.key];
+    } else if (o.tgl){
+      o.tgl.textContent = (o.key === "keepOpacity" ? "保持不透明度" : o.key) + "：" + (P[o.key] ? "开" : "关");
+      o.tgl.classList.toggle("on", !!P[o.key]);
+    } else if (o.sel){
+      o.sel.value = String(P[o.key]);
+    }
+  }
+  const lb = $("lock_blendLock");
+  if (lb){ lb.textContent = P.blendLock ? "🔒" : "🔓"; lb.classList.toggle("on", !!P.blendLock); }
+  $("blendmode").value = P.blendMode;
+  markBlendNote();
+  $("color").value = P.color;
+  const a = $("p_size"), b = $("p_alpha");
+  a.checked = !!P.pressureSize; b.checked = !!P.pressureAlpha;
+  markCats(); markTools(); markPresets(); markDots();
+  $("tool_tip").textContent = "当前工具：" + toolById(P.toolId).name + "（kind=" + toolById(P.toolId).kind + "）";
+  $("h_tool").textContent = toolById(P.toolId).name;
+}
+
+/* ── 15. 视图尺寸（主画布 = 只看合成结果的可见部分 ✓ 不再存像素） ─────── */
+function resize(){
+  const nd = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const r = $("stage").getBoundingClientRect();
+  DPR = nd;
+  W = Math.max(1, Math.floor(r.width)); H = Math.max(1, Math.floor(r.height));
+  cv.width = Math.max(1, Math.floor(W * DPR));
+  cv.height = Math.max(1, Math.floor(H * DPR));
+  if (!view.ready || view.autoFit) fitView();
+  invalidateView(null);
+}
+window.addEventListener("resize", () => { resize(); renderBar(); renderPresetPreviews(); });
+
+/* ── 16. 指针事件（笔压 / 稳定器 / 图层 / 每笔撤销） ────────────────────
+   ⚠ 2026-09-20 用户口径「**取消旋转功能**」✓：`PointerEvent.twist` 那条链整套拿掉 ——
+      `tipAngleOf()` / `twistText()` / `twistSeen` / HUD 的 `#h_twist` 全删 ✓。
+      倾斜（tiltX/tiltY）**只显示、不参与运算** ✓（HUD 那一格留着当"板子有没有报"的指示灯）。 */
+let drawing = false, smooth = null, usingStrokeLayer = false;
+let strokeState = makeStrokeState(1), strokeAlpha = 1;
+let blurState = makeStrokeState(1);
+let paintCtx = null;                       // 这一笔画在哪（选中层的 ctx，或"保持不透明度"的笔画层）
+const strokeCv = document.createElement("canvas");
+const strokeCtx = strokeCv.getContext("2d", { willReadFrequently: true });
+
+function pressureOf(e){
+  if (e.pointerType === "pen") return clamp(e.pressure > 0 ? e.pressure : 0.5, 0.01, 1);
+  if (e.pointerType === "touch") return clamp(e.pressure > 0 ? e.pressure : 0.5, 0.01, 1);
+  return 1;
+}
+/* 光标圆环：位置/直径都按当前缩放换算（画的半径是"画布像素"，屏幕上要乘缩放 ✓） */
+function updateRing(cssX, cssY, docRadius){
+  const d = Math.max(4, docRadius * 2 * view.scale);
+  ring.style.display = "block";
+  ring.style.left = cssX + "px"; ring.style.top = cssY + "px";
+  ring.style.width = d + "px"; ring.style.height = d + "px";
+}
+window.addEventListener("error", (ev) => {
+  const el = document.getElementById("h_warn");
+  if (el) el.textContent = "脚本出错：" + (ev.message || "unknown") + "（把这句话发我即可）";
+});
+/* 每笔开始前，把"这一笔会碰到的区域"的**前像素**存一份（撤销按笔画 ✓，只存碰到的那块） */
+function savePreRect(r){
+  if (!r) return;
+  const L = layerById(strokeLayerId);
+  if (!L) return;
+  const cp = (x0, y0, x1, y1) => {
+    const rr = rectClamp(x0, y0, x1, y1);
+    if (!rr) return;
+    const w = rr.x1 - rr.x0, h = rr.y1 - rr.y0;
+    preCtx.setTransform(1, 0, 0, 1, 0, 0);
+    preCtx.globalCompositeOperation = "source-over";
+    preCtx.clearRect(rr.x0, rr.y0, w, h);                 // 先清 → 免得"透明像素"把老内容透出来
+    preCtx.drawImage(L.cv, rr.x0, rr.y0, w, h, rr.x0, rr.y0, w, h);
+  };
+  const p = strokePre;
+  if (!p){ cp(r.x0, r.y0, r.x1, r.y1); strokePre = r; return; }
+  if (r.x0 >= p.x0 && r.y0 >= p.y0 && r.x1 <= p.x1 && r.y1 <= p.y1) return;
+  const n = { x0: Math.min(p.x0, r.x0), y0: Math.min(p.y0, r.y0),
+              x1: Math.max(p.x1, r.x1), y1: Math.max(p.y1, r.y1) };
+  if (r.y0 < p.y0) cp(r.x0, r.y0, r.x1, Math.min(r.y1, p.y0));
+  if (r.y1 > p.y1) cp(r.x0, Math.max(r.y0, p.y1), r.x1, r.y1);
+  if (r.x0 < p.x0) cp(r.x0, Math.max(r.y0, p.y0), Math.min(r.x1, p.x0), Math.min(r.y1, p.y1));
+  if (r.x1 > p.x1) cp(Math.max(r.x0, p.x1), Math.max(r.y0, p.y0), r.x1, Math.min(r.y1, p.y1));
+  strokePre = n;
+}
+/* 一颗笔尖可能碰到的最外框（保守放大：大小抖动 / 比例抖动 / 散布 / 扩散噪点 / 模糊窗口都算进去）
+   —— 宁可存大一点，也不能漏：漏了撤销就会留残影 ✗ */
+function dabRectFor(prm, x, y, radius, fn){
+  let ext;
+  if (fn === blurDab){
+    ext = Math.abs(radius) + 168;                        // blurDab 的窗口上限 160px（见 blurDab）
+  } else {
+    let r = nibRadius(prm, radius, 1, 1 + clamp(prm.SizeJitter, 0, 100) / 100);
+    const spread = (prm.spreadNoise && prm.spreadNoiseStrength > 0) ? prm.spreadNoiseStrength / 100 : 0;
+    r *= 1 + 0.4 * spread;
+    let ratio = 1;
+    if (prm.WxHRatio !== 0) ratio = prm.WxHRatio > 0 ? (100 / (100 - prm.WxHRatio)) : ((100 + prm.WxHRatio) / 100);
+    ratio *= Math.max(0.001, 1 - clamp(prm.WxHJitter, 0, 100) / 100);
+    ratio = clamp(ratio, 0.05, 20);
+    r *= Math.max(1, 1 / ratio);                         // 扁笔尖的长轴（角度抖动可能转到任意方向）
+    ext = r * (1 + 1.6 * clamp(prm.Scattering, 0, 300) / 100 + 0.3 * spread);
+  }
+  const m = ext + 8;
+  return rectClamp(x - m, y - m, x + m, y + m);
+}
+/* ══ 实时落笔（★★「画的线是一排点」的**真正根因**就在这个函数里 ★★）═════════════
+   2026-09-20 用户实机报「画出来是一排点」✗。以前这里写的是：
+       dabTo(g, prm, st, x, y, ...)          // ← **只盖一颗笔尖**
+   ⇒ 一个 `pointermove` 只落**一颗**笔尖 ⇒ 笔尖间距 = **指针事件间距**
+   ⇒ 鼠标稍快划过时事件间距就远大于笔尖直径 ⇒ 一排断开的点 ✗（慢划/小笔刷才碰巧连上 ✓）。
+   `walkTo()` 才是"沿这一小段路径按 Spacing 步进盖章 + 距离累加器 carry"的实现
+   （`st.last` = 上一颗笔尖的**落点**，`st.step` = 上一档的真实步距 ✓，`endStroke` 里也一直在重置它俩 ✓）。
+   ✅ 现在：一段 pointermove → walkTo() → 段内按 `dabStep()`（0.4r 护栏 ✓）盖满 ✓
+      ⇒ 指针事件多密多疏，画出来都是**连续的一笔** ✓。 */
+function liveDab(g, prm, st, x, y, radius, pressure, dir, fn){
+  /* 脏矩形必须盖住**整段**（上一颗笔尖的落点 → 这一点 ✓），只盖当前这一颗会漏 ✓ */
+  let R = dabRectFor(prm, x, y, radius, fn);
+  if (st.last) R = rectUnion(R, dabRectFor(prm, st.last.x, st.last.y, radius, fn));
+  savePreRect(R);
+  const er = isErasing();
+  if (!(fn === blurDab && er)){                  // 和原来 dabTo() 里的判断一致：模糊笔擦不了 ✓
+    for (const k in prm) LIVE_PRM[k] = prm[k];   // 复用同一个对象，避免每个事件都新建参数副本 ✓
+    LIVE_PRM.eraser = er;
+    walkTo(g, LIVE_PRM, st, x, y, radius, pressure, fn);
+  }
+  if (R){ markCompDirty(R); invalidateView(R); }
+  const now = Date.now();
+  if (now - lastThumbAt > 280){ lastThumbAt = now; const L = layerById(strokeLayerId); if (L){ L.thumbDirty = true; renderThumbs(); } }
+}
+let lastThumbAt = 0;
+function beginStroke(e){
+  const t = toolById(P.toolId);
+  /* ★「打开就能画」护栏：**没有图层 / 没有选中层时不许静默丢笔** ✗ ——
+     当场建一层并选中，这一笔照常落下 ✓（正常载入时 setupDoc() 已经有一层，这里是兜底 ✓）。 */
+  let L = activeLayer();
+  if (!L){
+    L = makeLayer("图层 1");
+    layers.push(L);
+    activeId = L.id;
+    markCompDirty(null);
+    buildLayerPanel(); updateDocInfo();
+    note("本来一个图层都没有：已自动新建一层，这一笔照常落下 ✓");
+  }
+  drawing = true; smooth = null; usingStrokeLayer = false;
+  dabCount = 0;
+  strokeLayerId = L.id;
+  strokePre = null;
+  strokeState = makeStrokeState(1);                     // dpr = 1：现在画的是"画布原始像素" ✓
+  strokeState.main = true;
+  strokeState.sampleCtx = compCtx;                      // ★ 混色/水分/色延伸采样 = 合成后的可见像素 ✓
+  strokeAlpha = clamp((P.Opacity / 100) * (P.density / 100), 0, 1);
+  blurState = makeStrokeState(1);
+  blurState.main = true;
+  blurState.sampleCtx = compCtx;
+  /* 到这里 L 一定存在（上面兜底建过 ✓）：**不再有"没层就悄悄 return"这条静默丢弃路径** ✗ */
+  if (t.kind === "select" || t.kind === "stub"){
+    drawing = false;
+    note("「" + t.name + "」：⚠ 本页没实现这个工具的笔迹，只切换了选中态（不会在画布上留下痕迹）");
+    return;
+  }
+  usingStrokeLayer = P.keepOpacity && t.kind !== "eraser" && !P.eraser;
+  if (usingStrokeLayer){
+    if (strokeCv.width !== DOCW || strokeCv.height !== DOCH){
+      strokeCv.width = DOCW; strokeCv.height = DOCH;
+    }
+    strokeCtx.setTransform(1, 0, 0, 1, 0, 0);
+    strokeCtx.globalCompositeOperation = "source-over";
+    strokeCtx.globalAlpha = 1;
+    strokeCtx.clearRect(0, 0, strokeCv.width, strokeCv.height);
+    paintCtx = strokeCtx;
+  } else {
+    paintCtx = L.ctx;
+    L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  if (t.kind === "bucket"){                             // 油漆桶：一次性，走后门
+    drawing = false;
+    note("油漆桶：填充中…");
+    const res = floodFill(pendingDocX, pendingDocY, P.color, 40);
+    note(res ? ("油漆桶：填充了 " + res.filled + " 像素（合成后采样，落在选中层上 ✓）")
+             : "油漆桶：起点颜色与填充色相同 / 越界，没动");
+    return;
+  }
+}
+function drawFnFor(st){
+  const t = toolById(P.toolId);
+  if (t.kind === "blur") return blurDab;
+  return stamp;
+}
+function targetCtx(){
+  if (usingStrokeLayer) return strokeCtx;
+  return paintCtx || compCtx;
+}
+/* 复用同一个对象，避免每次指针事件都新建参数副本（`liveDab()` 里给 walkTo 用 ✓）
+   ⚠ 原来的 `dabTo()`（单个笔尖的包装）已删：它就是"一排点"的来源 ——
+     实时落笔**必须**走 `walkTo()`（沿路径按 Spacing 盖章 ✗→✓），只在 `liveDab()` 里做一次。 */
+const LIVE_PRM = {};
+/* 视图坐标：pointer 的 clientX/Y → 画布区 CSS px → 画布原始像素（缩放/平移都在这里换算 ✓） */
+function localXY(e){
+  const r = cv.getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+function docXY(e){
+  const p = localXY(e);
+  return screenToDoc(p[0], p[1]);
+}
+let panning = null, spaceDown = false, pendingDocX = 0, pendingDocY = 0;
+cv.addEventListener("pointerdown", (e) => {
+  cv.setPointerCapture(e.pointerId);
+  const wantPan = (e.button === 1) || (spaceDown && e.button === 0);
+  if (wantPan){                                  // 中键 / 空格+左键 = 平移 ✓
+    panning = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    cv.style.cursor = "grabbing";
+    e.preventDefault(); return;
+  }
+  if (e.button !== 0 && e.pointerType === "mouse") return;
+  const p = docXY(e);
+  pendingDocX = p[0]; pendingDocY = p[1];
+  beginStroke(e);
+  if (!drawing) return;
+  smooth = { x: p[0], y: p[1] };
+  const r = P.size / 2;
+  const pv = pressureOf(e);
+  const g = targetCtx();
+  const fn = drawFnFor(strokeState);
+  const st = (fn === blurDab) ? blurState : strokeState;
+  st.last = null; st.carry = 0; st.dir = 0;
+  /* 先把"这一档步距"和"这一颗的半径"算出来（walkTo 稍后会重算一遍，数值完全一致 ✓）——
+     这样 HUD 的「步距 = ?r」从**第一颗笔尖**起就是真的，不会闪一下 0.00r ✓ */
+  st.step = dabStep(P, st, r, pv, 0);
+  liveDab(g, P, st, smooth.x, smooth.y, r, pv, 0, fn);
+  updateRing(p[0], p[1], r);
+  showPen(e, pv, r);
+  e.preventDefault();
+});
+cv.addEventListener("pointermove", (e) => {
+  if (panning && e.pointerId === panning.id){
+    view.tx += e.clientX - panning.x; view.ty += e.clientY - panning.y;
+    view.autoFit = false;
+    panning.x = e.clientX; panning.y = e.clientY;
+    invalidateView(null);
+    e.preventDefault(); return;
+  }
+  const pv = pressureOf(e), r = P.size / 2;
+  const lp = localXY(e);
+  if (!drawing){ updateRing(lp[0], lp[1], r); showPen(e, pv, r, false); return; }
+  const k = 1 - (P.stabilize / 100);
+  const evs = (typeof e.getCoalescedEvents === "function" && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+  const g = targetCtx();
+  const fn = drawFnFor(strokeState);
+  const st = (fn === blurDab) ? blurState : strokeState;
+  for (const ev of evs){
+    const dp = docXY(ev);
+    smooth.x += (dp[0] - smooth.x) * k;
+    smooth.y += (dp[1] - smooth.y) * k;
+    const pp = pressureOf(ev);
+    liveDab(g, P, st, smooth.x, smooth.y, r, pp, st.dir || 0, fn);
+    showPen(ev, pp, r, true);
+  }
+  const cur = docToScreen(smooth.x, smooth.y);
+  updateRing(cur[0], cur[1], r);
+  e.preventDefault();
+});
+function endStroke(e){
+  if (!drawing) return;
+  drawing = false;
+  const L = layerById(strokeLayerId);
+  const r = strokePre;                                     // 这一笔真正碰到的区域（撤销就存它 ✓）
+  if (usingStrokeLayer && L){
+    L.ctx.save();
+    L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    L.ctx.globalCompositeOperation = blendOp(P.blendMode);
+    L.ctx.globalAlpha = clamp(strokeAlpha, 0, 1);
+    L.ctx.drawImage(strokeCv, 0, 0);
+    L.ctx.globalAlpha = 1;
+    L.ctx.restore();
+    usingStrokeLayer = false;
+  }
+  if (L && r){
+    L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const before = preCtx.getImageData(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+    const after = L.ctx.getImageData(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+    pushHistory({ kind: "pixels", label: toolById(P.toolId).name + "一笔", layerId: L.id,
+                  x: r.x0, y: r.y0, before: before, after: after });
+    L.thumbDirty = true; renderThumbs();
+  }
+  strokePre = null;
+  strokeState.last = null; strokeState.carry = 0;
+  blurState.last = null; blurState.carry = 0;
+  if (e && e.clientX !== undefined){
+    const lp = localXY(e);
+    updateRing(lp[0], lp[1], P.size / 2);
+    showPen(e, pressureOf(e), P.size / 2, false);
+  }
+}
+cv.addEventListener("pointerup", endStroke);
+cv.addEventListener("pointercancel", endStroke);
+/* 平移要在抬手时结束（否则中键/空格拖完之后，画笔会一直当成平移 ✗） */
+function endPan(e){
+  if (panning && (e === undefined || e.pointerId === undefined || e.pointerId === panning.id)){
+    panning = null;
+    cv.style.cursor = spaceDown ? "grab" : "crosshair";
+  }
+}
+cv.addEventListener("pointerup", endPan);
+cv.addEventListener("pointercancel", endPan);
+cv.addEventListener("pointerleave", (e) => {
+  if (panning){ panning = null; cv.style.cursor = spaceDown ? "grab" : "crosshair"; }
+  endStroke(e);
+  ring.style.display = "none";
+});
+cv.addEventListener("contextmenu", (e) => e.preventDefault());
+/* 滚轮 = 以光标为锚点缩放（0.1–8×）✓ */
+cv.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const lp = localXY(e);
+  zoomAt(lp[0], lp[1], clamp(Math.pow(1.0016, -e.deltaY), 0.2, 5));
+}, { passive: false });
+
+function showPen(e, p, r, live){
+  $("h_type").textContent = e.pointerType === "pen" ? "数位板笔 ✓" : (e.pointerType === "touch" ? "触摸" : "鼠标 ✗");
+  $("h_p").textContent = p.toFixed(2);
+  /* 倾斜**只显示**（tiltX/tiltY）：本版不拿它算任何东西（旋转已取消 ✓，AngleControl 只剩 0/1 ✓） */
+  $("h_tilt").textContent = (e.tiltX || 0) + "° / " + (e.tiltY || 0) + "°";
+  $("h_r").textContent = (r * view.scale).toFixed(1);
+  $("p_fill").style.width = (p * 100).toFixed(0) + "%";
+  $("p_num").textContent = p.toFixed(2);
+  const pen = e.pointerType === "pen";
+  $("h_warn").textContent = pen ? "" : "（鼠标/触摸读不到压感：压力会恒等于 1 ✓ 插笔再试）";
+  $("p_note").textContent = pen ? (live ? "收到笔压 ✓" : "笔已就绪 ✓") : "没读到笔（数位板笔的 pointerType 才是 pen）";
+}
+
+/* ── 17. 按钮 / 导出 / 保存 / 快捷键 ─────────────────────────────────── */
+$("b_undo").addEventListener("click", doUndo);
+$("b_redo").addEventListener("click", doRedo);
+$("b_clear").addEventListener("click", clearActiveLayer);
+$("b_full").addEventListener("click", () => {
+  if (!document.fullscreenElement){
+    const el = document.documentElement;
+    const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (fn) fn.call(el).then(() => setTimeout(() => { resize(); renderBar(); renderPresetPreviews(); }, 80)).catch(() => note("全屏被浏览器拒绝"));
+  } else document.exitFullscreen();
+});
+$("b_clearprev").addEventListener("click", () => {
+  const g = $("bar").getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.fillStyle = "#fff"; g.fillRect(0, 0, $("bar").width, $("bar").height);
+  note("预览条已清空（不影响画布；改任意参数会重画）");
+});
+$("b_reset").addEventListener("click", () => { Object.assign(P, DEFAULTS); rebuildTile(); syncUI(); renderBar(); note("参数已重置为默认"); });
+$("b_export2").addEventListener("click", () => $("b_dump").click());
+$("blendmode").addEventListener("change", (e) => {
+  P.blendMode = e.target.value;
+  markBlendNote();
+  if (P.blendMode !== "normal" && P.blendMode !== "multiply") note("⚠「" + e.target.options[e.target.selectedIndex].text + "」本页未实现，实际按「正常」合成（参数仍会导出）");
+  else note("混合模式：" + e.target.options[e.target.selectedIndex].text);
+});
+$("p_size").addEventListener("change", (e) => { P.pressureSize = e.target.checked; onParamChanged("pressureSize"); });
+$("p_alpha").addEventListener("change", (e) => { P.pressureAlpha = e.target.checked; onParamChanged("pressureAlpha"); });
+$("color").addEventListener("input", (e) => { P.color = e.target.value; onParamChanged("color"); });
+
+/* ── 17b. 画布：新建 / 适配 / 保存 PNG / 打开图片当底图 ── */
+$("cv_preset").addEventListener("change", (e) => {
+  const v = e.target.value;
+  if (v === "custom"){ note("自定义：直接改右边两个框（宽 × 高，单位 px），再点「新建画布」"); return; }
+  const p = v.split("x");
+  $("nw").value = p[0]; $("nh").value = p[1];
+  note("画布尺寸选好了：" + v + "（点「新建画布」生效，步骤可撤销）");
+});
+$("b_newdoc").addEventListener("click", () => {
+  const w = Number($("nw").value), h = Number($("nh").value);
+  if (!isFinite(w) || !isFinite(h) || w < 16 || h < 16){ note("宽/高不合法（16–8192 px）"); return; }
+  commitDocOp(() => { setupDoc(w, h); }, "新建画布");
+  fitView();
+  note("新画布：" + DOCW + " × " + DOCH + " px（原来的整份能撤销回来 ✓）");
+});
+$("b_fit").addEventListener("click", () => { fitView(); note("已适配窗口（缩放 " + Math.round(view.scale * 100) + "%）"); });
+/* 保存 PNG：把合成结果按**画布原始尺寸**导出（不是屏幕尺寸 ✓），带白纸底 */
+function savePng(){
+  compositeAll();
+  const out = document.createElement("canvas");
+  out.width = DOCW; out.height = DOCH;
+  const g = out.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.globalAlpha = 1;
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, DOCW, DOCH);
+  g.drawImage(compCv, 0, 0);
+  const name = "brush-lab-" + DOCW + "x" + DOCH + ".png";
+  const done = (url) => {
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 5000);
+    note("已导出 " + name + "（合成结果 · 画布原始尺寸 " + DOCW + "×" + DOCH + "）✓");
+  };
+  if (typeof out.toBlob === "function"){
+    out.toBlob((b) => { if (b) done(URL.createObjectURL(b)); else done(out.toDataURL("image/png")); }, "image/png");
+  } else done(out.toDataURL("image/png"));
+}
+$("b_png").addEventListener("click", savePng);
+$("b_png2").addEventListener("click", savePng);
+/* 打开图片当底图：**本地读**（FileReader，不上传任何地方 ✓），画成最下面一层 */
+$("b_open").addEventListener("click", () => $("f_open").click());
+$("f_open").addEventListener("change", (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => {
+    const img = new Image();
+    img.onload = () => importBaseImage(img);
+    img.onerror = () => note("图片解码失败（换个 PNG/JPG 试试）");
+    img.src = fr.result;
+  };
+  fr.onerror = () => note("文件读取失败");
+  fr.readAsDataURL(f);
+  e.target.value = "";                                    // 同一个文件还能再选一次
+});
+function importBaseImage(img){
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  if (!iw || !ih){ note("图片尺寸读不出来"); return; }
+  commitDocOp(() => {
+    const L = makeLayer("底图");
+    layers.unshift(L);                                    // 放最下面
+    const s = Math.min(DOCW / iw, DOCH / ih);
+    const w = iw * s, h = ih * s;
+    L.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    L.ctx.globalCompositeOperation = "source-over";
+    L.ctx.globalAlpha = 1;
+    L.ctx.drawImage(img, (DOCW - w) / 2, (DOCH - h) / 2, w, h);
+    activeId = L.id;
+  }, "打开图片当底图");
+  note("图片已读成最下面的「底图」层（本地读，没上传 ✓ 原图 " + iw + "×" + ih +
+       (Math.abs(iw / ih - DOCW / DOCH) > 1e-3 ? "，与画布比例不同 → 按比例居中放入" : "") + "）");
+}
+
+function buildExport(){
+  const resource = {}, tool = {}, app = {};
+  for (const k of RESOURCE_KEYS) resource[k] = P[k];
+  for (const k of TOOL_KEYS) tool[k] = P[k];
+  for (const k of APP_KEYS) app[k] = P[k];
+  const ls = [];
+  for (let i = 0; i < layers.length; i++){
+    const L = layers[i];
+    ls.push({ index: i, name: L.name, visible: L.visible, opacity: Math.round(L.opacity * 100) });
+  }
+  return {
+    version: 2,
+    note: "笔刷参数（SAI 2 命名）· docs/brush-lab.html 导出 · resource=资源层(init/*.ini) / tool=工具层(工具面板) / app=应用程序侧",
+    exportedAt: new Date().toISOString(),
+    ui: { category: P.category, toolId: P.toolId, toolName: toolById(P.toolId).name,
+          toolKind: toolById(P.toolId).kind, presetId: P.presetId, variant: curVariantOf[P.toolId] || null },
+    canvas: { w: DOCW, h: DOCH, zoomPct: Math.round(view.scale * 100), activeLayer: activeId, layers: ls },
+    resource: resource,
+    tool: tool,
+    app: app,
+    params: Object.assign({}, P),        // 扁平副本，方便肉眼比对
+    docs: "docs/44-方案-笔刷引擎与SAI参数清单.md",
+  };
+}
+$("b_dump").addEventListener("click", async () => {
+  const text = JSON.stringify(buildExport(), null, 2);
+  try { await navigator.clipboard.writeText(text); } catch (_) {}
+  const blob = new Blob([text], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "brush-params.json"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  note("参数已复制到剪贴板并下载 brush-params.json（version 2）✓ 发我即可");
+});
+window.addEventListener("keydown", (e) => {
+  const tag = (e.target && e.target.tagName) ? e.target.tagName : "";
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+  const k = (e.key || "").toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === "z" && e.shiftKey){ e.preventDefault(); doRedo(); return; }   // Ctrl+Shift+Z
+  if ((e.ctrlKey || e.metaKey) && k === "z"){ e.preventDefault(); doUndo(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === "y"){ e.preventDefault(); doRedo(); return; }                // Ctrl+Y ✓
+  if (e.code === "Space"){ spaceDown = true; if (!drawing) cv.style.cursor = "grab"; e.preventDefault(); return; }
+  if (e.key === "e"){ selectTool(P.toolId === "eraser" ? "pencil" : "eraser"); }
+  if (e.key === "["){ setSize(P.size - 4); }
+  if (e.key === "]"){ setSize(P.size + 4); }
+  if (e.key === "0"){ fitView(); }
+  if (e.key === "+" || e.key === "="){ zoomAt(W / 2, H / 2, 1.2); }
+  if (e.key === "-"){ zoomAt(W / 2, H / 2, 1 / 1.2); }
+  if (e.key === "Delete"){ clearActiveLayer(); }
+});
+window.addEventListener("keyup", (e) => {
+  if (e.code === "Space"){
+    spaceDown = false;
+    if (!drawing && !panning) cv.style.cursor = "crosshair";
+  }
+});
+window.addEventListener("blur", () => { spaceDown = false; });
+
+/* ── 18. 启动 ─────────────────────────────────────────────────────────── */
+/* ★「打开就能画」自检（2026-09-20 用户口径「第一版的网页明明挺好的现在不行」✓）——
+   载入后必须不用点任何东西就能画：① 有文档 ② 有 ≥1 层且有一层被选中 ③ 画布已 fitView
+   且在视口里可见 ④ 默认工具 = 画笔 ⑤ 默认颜色不是纯白 ⑥ 左键按下即落笔。
+   这里把①~⑤逐条**当场修掉**（并把修了什么报出来 ✓），⑥ 由 beginStroke() 的兜底层保证 ✓。 */
+function selfCheck(){
+  const fixed = [];
+  if (!layers.length){                                   // ① 文档 + 层
+    const L0 = makeLayer("图层 1");
+    layers.push(L0); activeId = L0.id;
+    markCompDirty(null); buildLayerPanel(); fixed.push("建了 1 层");
+  }
+  if (!layerById(activeId)){                             // ② 必须有一层被选中
+    const L0 = layers[layers.length - 1];
+    activeId = L0.id; buildLayerPanel(); fixed.push("选中了「" + L0.name + "」");
+  }
+  if (!view.ready || view.scale <= 0){ fitView(); fixed.push("fitView"); }   // ③ 画布可见且居中
+  const kd = toolById(P.toolId).kind;                    // ④ 默认 = 画笔（dab / eraser 都能画）
+  if (kd !== "dab" && kd !== "eraser"){
+    P.toolId = "pencil"; P.eraser = false; markTools();
+    $("h_tool").textContent = toolById(P.toolId).name;
+    fixed.push("工具回到「铅笔」");
+  }
+  const c0 = String(P.color || "").toLowerCase().replace(/\s/g, "");          // ⑤ 不能是纯白（看不见 ✗）
+  if (c0 === "#ffffff" || c0 === "#fff" || c0 === "white"){
+    P.color = DEFAULTS.color; $("color").value = P.color;
+    fixed.push("颜色从纯白改回 " + P.color);
+  }
+  return fixed;
+}
+setupDoc(1024, 1024);                     // 建文档 + 图层（图层数据结构：每层一张 canvas ✓）
+rebuildTile();
+resize();                                 // 里面会 fitView（适配窗口）
+syncUI();
+$("p_size").checked = !!P.pressureSize;
+$("p_alpha").checked = !!P.pressureAlpha;
+selectTool(P.toolId);
+const scFix = selfCheck();
+note("就绪：多图层 + 缩放平移 + 按笔画撤销；混色/水分量的采样读的是合成后的可见像素 ✓" +
+     (scFix.length ? "｜自检已修：" + scFix.join("、") : "｜自检通过：打开就能画 ✓"));
+new ResizeObserver(() => { resize(); renderBar(); }).observe($("stage"));
+requestAnimationFrame(() => { renderPresetPreviews(); renderBar(); flushView(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 深色模式的启动底色（和 NaiStudioTheme 暗色 background 一致：#15202B） -->
+<resources>
+    <color name="window_background">#FF15202B</color>
+</resources>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 小组件文案的英文版（中文那份见 `values/strings.xml` 的说明：
+         小组件拿不到 App 的运行时文案表，只能走资源，所以中英各一份）。 -->
+    <string name="widget_label_balance">NAI Studio balance</string>
+    <string name="widget_label_balance_stats">NAI Studio balance + stats</string>
+    <string name="widget_desc_balance">Shows only your NovelAI balance (one line)</string>
+    <string name="widget_desc_balance_stats">Shows your NovelAI balance plus today\'s / this month\'s image counts and Anlas spent</string>
+
+    <string name="widget_balance_label">Balance</string>
+    <string name="widget_balance_placeholder">—</string>
+
+    <!-- ==== 1×2 balance bar (user 2026-09-26: "make it look like this, with a progress bar") ==== -->
+    <string name="widget_anlas_mark">A</string>
+    <string name="widget_v5_caption">V5</string>
+    <string name="widget_v5_percent_format">%1$s%%</string>
+    <string name="widget_v5_badge">V</string>
+    <string name="widget_tier_placeholder">—</string>
+
+    <!-- 热点图底下那一行汇总 -->
+    <string name="widget_heat_placeholder">Today 0 · Month 0 · 0 Anlas</string>
+    <string name="widget_heat_note">Today %1$d · Month %2$d · %3$d Anlas</string>
+
+    <!-- Calendar: month title + weekday header (Monday first) -->
+    <string name="widget_month_placeholder">—</string>
+    <string name="widget_week_header">M T W T F S S</string>
+</resources>
