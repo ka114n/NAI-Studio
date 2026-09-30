@@ -2001,7 +2001,7 @@ fun GenerateScreen(
                                                     if (!referenceSkin && !bottomFloating && !state.bottomBarHidden) {
                                                         // ⚠️ 多扣一条缝：两块各自的圆角 + 缝才看得出是两扇窗口 ✓
                                                         //（用户 2026-09-26：「两块粘成一条、没分界」）
-                                                        bottomBarHeightPx.toDp() + DOCK_PANEL_GAP
+                                                        (bottomBarHeightPx.toDp() + DOCK_PANEL_GAP).coerceAtLeast(0.dp)
                                                     } else {
                                                         0.dp
                                                     }
@@ -2097,7 +2097,7 @@ fun GenerateScreen(
                     )
                     val paramsTabCenterOffsetY = with(panelDensity) {
                         if (!referenceSkin && !bottomFloating && !state.bottomBarHidden) {
-                            -(bottomBarHeightPx.toDp() + DOCK_PANEL_GAP) / 2
+                            -((bottomBarHeightPx.toDp() + DOCK_PANEL_GAP).coerceAtLeast(0.dp)) / 2
                         } else 0.dp
                     }
                     ParamsEdgeTrigger(
@@ -2123,7 +2123,7 @@ fun GenerateScreen(
                             .padding(
                                 bottom = with(panelDensity) {
                                     if (!referenceSkin && !bottomFloating && !state.bottomBarHidden) {
-                                        bottomBarHeightPx.toDp() + DOCK_PANEL_GAP
+                                        (bottomBarHeightPx.toDp() + DOCK_PANEL_GAP).coerceAtLeast(0.dp)
                                     } else 12.dp
                                 },
                             )
