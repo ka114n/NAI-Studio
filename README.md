@@ -1,6 +1,71 @@
-# NAI Studio
+<h1 align="center">
+  <img src="docs/images/logo.svg" width="64" height="64" alt="NAI Studio logo" align="center">&nbsp;NAI Studio
+</h1>
 
-基于 Kotlin / Compose 的图像生成与编辑应用，支持 Windows 和 Android。包含提示词编辑、图生图、遮罩、无限画布和漫画分镜工作流。本项目独立维护，并非 NovelAI 官方产品，需要自行配置 API 凭据。
+<p align="center">
+  <b>NovelAI 原生客户端，电脑和手机用同一套界面。</b><br>
+  易用、便捷、快速：文生图、局部重绘、无限画布、漫画分镜，都在一个画面里完成。
+</p>
+
+<p align="center">
+  <a href="https://github.com/ka114n/NAI-Studio/releases/latest"><img src="https://img.shields.io/github/v/release/ka114n/NAI-Studio?label=%E4%B8%8B%E8%BD%BD&color=5CD4EA" alt="最新版本"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-339EFA" alt="Windows 10 / 11">
+  <img src="https://img.shields.io/badge/Android-8.0%2B-6FD8A6" alt="Android 8.0+">
+  <img src="https://img.shields.io/badge/Kotlin-Compose-B69CFF" alt="Kotlin / Compose">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/ka114n/NAI-Studio?color=8FA6B6" alt="MIT"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ka114n/NAI-Studio/releases/latest">下载</a> ·
+  <a href="https://naistudio.art">官网</a> ·
+  <a href="#功能">功能</a> ·
+  <a href="#构建">构建</a>
+</p>
+
+<p align="center">
+  <img src="docs/images/overview.webp" width="880" alt="NAI Studio 电脑版与手机版界面">
+</p>
+
+> 本项目独立维护，并非 NovelAI 官方产品，与 Anlatan 没有关联。需要自备 NovelAI 账号的 Persistent API Token，或自托管网关地址。
+
+## 功能
+
+### 框一下，画面就长出来 · 无限画布
+
+在已有画面旁边框一块区域，点「拓展生成」，新内容接着原图往外长。接缝自动羽化，框多大都行，会自动换算成合适的请求尺寸；参考多宽的周边画面也可以调。
+
+<p align="center"><img src="docs/images/infinite-canvas.webp" width="720" alt="无限画布：生成框沿着已有画面向外拓展"></p>
+
+### 一格一格写，一整页生成 · 漫画模式
+
+每一格单独写提示词，标注场景、角色、台词或道具；可以选版式和阅读顺序（右→左或左→右），整页风格词统一管理。
+
+<p align="center"><img src="docs/images/comic.webp" width="720" alt="漫画模式：左侧分格提示词，右侧整页生成"></p>
+
+### 点一下角色，分区就建好 · 角色模式
+
+在「角色模式」里打开角色图鉴，点角色名就自动新建一个角色分区，提示词已经填好。每个角色单独写描述，在方格里拖动数字定位。V4 / V4.5 最多 6 个分区，V5 最多 32 个。
+
+<p align="center"><img src="docs/images/characters.webp" width="720" alt="角色模式：从角色图鉴点选，自动新建角色分区"></p>
+
+### 换个颜色，更合心意 · 配色与语言
+
+内置 6 套配色，每套分深色和浅色，也可以自己调色。电脑版和手机版同步。界面支持简体中文和英文。
+
+<p align="center"><img src="docs/images/schemes.webp" width="880" alt="6 套配色的深色与浅色"></p>
+
+### 还有这些
+
+| 功能 | 说明 |
+| --- | --- |
+| 文生图、图生图、局部重绘 | 支持 NAI V4、V4.5、V5 全部模型。局部重绘在内置画布编辑器里直接涂遮罩，画笔、橡皮、套索、吸管都有。 |
+| 提示词工具 | 用 Tag Codex 查标签，用 AnimaDex 查画师风格，内置翻译；常用风格提示词可以从预设里一键选。 |
+| 图库 | 按时间或随机排列，支持分组。生成参数读写在 PNG 元数据里，改过的参数可以一键重置。 |
+| 用量统计 | 像 GitHub 贡献图一样按月查看每天生成了多少张，电脑和手机显示一致。 |
+| 两种接入方式 | 填 NovelAI 的 Persistent API Token 直连官方，或填自托管网关地址，随时切换。 |
+| 桌面小组件（仅 Android） | 1×2 余额条，或 3×2 的余额、统计和日历，不打开 App 也能看到。 |
+
+> 本页图片为界面演示画面，配色数值取自 App 主题。
 
 ## 下载
 
