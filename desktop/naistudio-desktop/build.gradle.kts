@@ -185,7 +185,7 @@ compose.desktop {
             // 要正规安装器（exe/msi）得先装 WiX，再 `targetFormats(TargetFormat.Exe)`，
             // 见 docs/25 方案 §5。
             packageName = "NAI Studio"
-            packageVersion = "1.1.142"
+            packageVersion = "1.1.143"
             description = "NAI Studio 电脑版"
             vendor = "NAI Studio"
             // 裁剪运行时用到的模块：Compose 桌面端（skiko）需要这几个，

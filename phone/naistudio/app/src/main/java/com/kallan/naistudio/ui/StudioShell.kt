@@ -228,6 +228,8 @@ private fun drawerWidth(): Dp {
 @Composable
 fun StudioShell(state: AppState) {
     var index by rememberSaveable { mutableIntStateOf(0) }
+    val updaterContext = androidx.compose.ui.platform.LocalContext.current
+    ApplicationUpdateHost(com.kallan.naistudio.BuildConfig.VERSION_NAME, "Android", java.io.File(updaterContext.cacheDir, "updates"), { com.kallan.naistudio.services.AndroidApplicationUpdater.install(updaterContext, it) }, state.settings.language)
     val language = state.settings.language
     val t: (String) -> String = { key -> RuntimeText.text(language, key) }
 

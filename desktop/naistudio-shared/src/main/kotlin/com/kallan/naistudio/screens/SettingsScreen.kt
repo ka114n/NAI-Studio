@@ -611,6 +611,7 @@ fun SettingsScreen(state: AppState) {
             onToggle = { aboutOpen = !aboutOpen },
             subtitle = platform.appVersion,
         ) {
+            com.kallan.naistudio.ui.ApplicationUpdateHost(platform.appVersion, "Windows", java.io.File(platform.paths.filesDir, "updates"), platform::installApplicationUpdate, language, manual = true)
             // 版本号从平台层读（手机是每次构建自动生成的 BuildConfig，电脑是版本常量）——
             // 装的是哪一次构建一眼可见，不是硬编码。
             Text(

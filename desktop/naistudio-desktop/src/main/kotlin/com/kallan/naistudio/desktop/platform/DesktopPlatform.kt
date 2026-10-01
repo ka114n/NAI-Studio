@@ -90,6 +90,8 @@ fun desktopPlatform(): Platform = object : Platform {
 
     /** 版本号：先用常量（与 `build.gradle.kts` 的 `packageVersion` 保持一致）。
      *  桌面要不要独立编号、要不要跟手机同号，见 docs/25 方案 Q10 —— 定了再改成统一来源。 */
+    override fun installApplicationUpdate(file: File) = DesktopApplicationUpdater.install(file)
+
     override val appVersion: String get() = DESKTOP_VERSION
 
     /** 电脑版暂时只做 local 那一套（自填 token 直连），见 docs/25 方案 Q4。 */
@@ -318,7 +320,7 @@ private fun penRotationDegrees(radians: Double): Float {
 
 
 /** 电脑版版本号。见 [Platform.appVersion] 的说明。 */
-const val DESKTOP_VERSION = "1.1.3"
+const val DESKTOP_VERSION = "1.1.143"
 
 /** "关于"里显示的构建标识（电脑版没有 BuildConfig，给个能看出是电脑版的串）。 */
 const val DESKTOP_BUILD_STAMP = "desktop"

@@ -181,6 +181,8 @@ interface Platform {
     val uiScale: Float get() = 1f
 
     /** App 版本号（手机 = `BuildConfig.VERSION_NAME`）。写进备份元数据用。 */
+    fun installApplicationUpdate(file: java.io.File) { error("Application updating is unavailable in this build") }
+
     val appVersion: String
 
     /**

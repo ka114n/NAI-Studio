@@ -462,6 +462,8 @@ private val CollapsedSidebarWidth = 68.dp
 @Composable
 fun StudioShell(state: AppState, appName: String) {
     var index by rememberSaveable { mutableIntStateOf(0) }
+    val updaterPlatform = com.kallan.naistudio.platform.LocalPlatform.current
+    ApplicationUpdateHost(updaterPlatform.appVersion, "Windows", java.io.File(updaterPlatform.paths.filesDir, "updates"), updaterPlatform::installApplicationUpdate, state.settings.language)
     val language = state.settings.language
     val t: (String) -> String = { key -> RuntimeText.text(language, key) }
 

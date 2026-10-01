@@ -71,7 +71,9 @@
 
 在 [Releases](https://github.com/ka114n/NAI-Studio/releases) 下载。
 
-当前版本：**1.1.142**。[更新说明](docs/releases/1.1.142.md)
+当前版本：**1.1.143**。[更新说明](docs/releases/1.1.143.md)
+
+双端支持应用内检查、下载及安装更新。1.1.142 及更早版本需手动升级到 1.1.143 一次，之后可在设置 → 关于中更新；Windows 自动替换程序并重启，Android 由系统确认覆盖安装。[更新机制说明](docs/UPDATES.md)
 
 - Windows：解压 ZIP，打开 `NAI Studio.exe`，保留同目录的 `app` 和 `runtime`，无需安装 Java。
 - Android：安装 APK，要求 Android 8.0 或更高。如果旧测试版签名冲突，请先导出备份，再卸载测试版后安装。

@@ -1,5 +1,11 @@
 # Private development backup
 
+## 2026-10-01 checkpoint — 1.1.143 application updater
+
+Both platforms check stable GitHub releases at startup and from Settings/About, download with progress and verify asset size/SHA-256. Windows stages shipped files, uses a hidden helper after process exit, retains prior files and rolls back failed replacement. Android checks APK identity/signature/version before requesting system installation from a restricted private-cache FileProvider. User data remains outside the replacement transaction. Desktop version reporting is corrected to match 1.1.143.
+
+Verification: Windows 538 tests (6 skipped), Android 494 tests, no failures/errors; Windows replacement and rollback transaction fixtures passed, live GitHub check/download/digest passed, Windows startup and Android release signing/version checks passed. Android installation UI was not exercised on a physical device. Complete update instructions are in docs/UPDATES.md. Local 1.1.143 verification builds do not constitute a public Release.
+
 ## 2026-10-01 local consolidation
 
 The latest source checkout and complete Git history now reside at `C:/Users/kallan/Desktop/NAI-Studio/source`. Windows and Android 1.1.142 validation packages are in the same project root. Copies are verified before older duplicate desktop directories are removed. Signing files stay outside Desktop. Application code is unchanged by this documentation and workspace-location checkpoint.

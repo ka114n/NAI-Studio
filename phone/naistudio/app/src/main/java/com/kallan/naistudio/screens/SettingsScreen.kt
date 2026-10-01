@@ -481,6 +481,8 @@ fun SettingsScreen(state: AppState) {
             onToggle = { aboutOpen = !aboutOpen },
             subtitle = BuildConfig.VERSION_NAME,
         ) {
+            val updaterContext = LocalContext.current
+            com.kallan.naistudio.ui.ApplicationUpdateHost(BuildConfig.VERSION_NAME, "Android", java.io.File(updaterContext.cacheDir, "updates"), { com.kallan.naistudio.services.AndroidApplicationUpdater.install(updaterContext, it) }, language, manual = true)
             // 版本号从 BuildConfig 读（每次构建自动生成），不再硬编码 —— 装的是哪一次构建一眼可见
             Text(
                 "NAI Studio · ${t("settings.version")} ${BuildConfig.VERSION_NAME}",
