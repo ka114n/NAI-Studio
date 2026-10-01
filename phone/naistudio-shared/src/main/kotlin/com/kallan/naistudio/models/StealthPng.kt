@@ -6,6 +6,8 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
 import java.util.zip.Inflater
+import java.util.zip.CRC32
+import java.util.zip.DeflaterOutputStream
 
 /**
  * NovelAI 的 **alpha 通道隐写**（`stealth_pngcomp`）：把元数据藏在像素 alpha 的**最低位**里。
@@ -102,6 +104,70 @@ object StealthPng {
         val inflated = inflateIdat(png) ?: return null
         val pixels = unfilter(inflated, width, height) ?: return null
         return readPayloadFromAlpha(pixels, width, height)
+    }
+
+    /** Remove recognised alpha/RGB steganography without flattening genuine transparency. */
+    fun stripHiddenMetadata(png: ByteArray): ByteArray {
+        val (width, height) = readIhdr(png) ?: return png
+        require(width > 0 && height > 0 && width.toLong() * height <= MAX_PIXELS) {
+            "Image is too large to clear hidden metadata safely"
+        }
+        val pixels = unfilter(requireNotNull(inflateIdat(png)), width, height)
+            ?: error("Cannot decode PNG pixels to clear hidden metadata")
+        fun signature(channels: IntArray): String {
+            val bytes = ByteArray(15)
+            val available = width.toLong() * height * channels.size
+            if (available < bytes.size * 8) return ""
+            for (bit in 0 until bytes.size * 8) {
+                val pixel = bit / channels.size
+                val x = pixel / height
+                val y = pixel % height
+                val channel = channels[bit % channels.size]
+                val lsb = pixels[(y * width + x) * 4 + channel].toInt() and 1
+                bytes[bit / 8] = (bytes[bit / 8].toInt() or (lsb shl (7 - bit % 8))).toByte()
+            }
+            return String(bytes, Charsets.US_ASCII)
+        }
+        val alpha = signature(intArrayOf(3)) in setOf("stealth_pngcomp", "stealth_pnginfo")
+        val rgb = signature(intArrayOf(0, 1, 2)) in setOf("stealth_rgbcomp", "stealth_rgbinfo")
+        if (!alpha && !rgb) return png
+        // Clear the entire carrier, including payload/FEC, rather than just corrupting its header.
+        for (i in pixels.indices) {
+            if ((alpha && i % 4 == 3) || (rgb && i % 4 != 3)) {
+                pixels[i] = (pixels[i].toInt() or 1).toByte()
+            }
+        }
+        val compressed = ByteArrayOutputStream()
+        DeflaterOutputStream(compressed).use { out ->
+            val stride = width * 4
+            for (y in 0 until height) {
+                out.write(0) // PNG filter None
+                out.write(pixels, y * stride, stride)
+            }
+        }
+        fun writeChunk(out: ByteArrayOutputStream, type: String, data: ByteArray) {
+            fun writeInt(n: Int) { for (shift in intArrayOf(24, 16, 8, 0)) out.write(n ushr shift and 255) }
+            val name = type.toByteArray(Charsets.US_ASCII)
+            writeInt(data.size); out.write(name); out.write(data)
+            val crc = CRC32().apply { update(name); update(data) }
+            writeInt(crc.value.toInt())
+        }
+        val out = ByteArrayOutputStream()
+        out.write(PNG_SIGNATURE)
+        var offset = 8
+        var replaced = false
+        while (offset + 12 <= png.size) {
+            val length = readInt(png, offset)
+            require(length >= 0 && length <= png.size - offset - 12) { "Invalid PNG chunk" }
+            val type = String(png, offset + 4, 4, Charsets.US_ASCII)
+            if (type == "IDAT") {
+                if (!replaced) writeChunk(out, "IDAT", compressed.toByteArray())
+                replaced = true
+            } else out.write(png, offset, length + 12)
+            offset += length + 12
+            if (type == "IEND") break
+        }
+        return out.toByteArray()
     }
 
     // ------------------------------------------------------------------ PNG 外壳

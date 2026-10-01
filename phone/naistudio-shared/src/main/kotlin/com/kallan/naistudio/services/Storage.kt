@@ -327,8 +327,7 @@ class Storage(private val platform: Platform) {
      */
     private fun resolveSaveDir(settings: AppSettings, date: String, groupName: String?): File {
         val candidates = buildList {
-            val custom = settings.imageOutputDir.trim()
-            if (custom.isNotEmpty()) add(File(custom))
+            // Android history originals always remain in the app sandbox, including legacy settings.
             add(platform.paths.defaultImagesDir())
         }
         var lastError: Exception? = null
@@ -452,7 +451,7 @@ class Storage(private val platform: Platform) {
             runCatching { putImageToGallery(target) }
         }
         // 另存一份到用户选的文件夹（SAF 授权）：同样尽力而为，失败不影响已落盘的原图
-        runCatching { exportToOutputFolder(settings, target) }
+        if (settings.saveToGallery) runCatching { exportToOutputFolder(settings, target) }
 
         val item = HistoryItem(
             // 进程内自增序号拼进 id：同一毫秒保存多张（一个 ZIP 多图 / 连发）时，
@@ -519,30 +518,26 @@ class Storage(private val platform: Platform) {
     /** 用于重命名与导出包名。 */
     fun safeFileStem(value: String): String = safeFilePrefix(value).replace(' ', '_').ifEmpty { "image" }
 
-    /**
-     * 剥掉 PNG 的文本元数据块。参考实现剥的是 `tEXt` / `iTXt` / `zTXt` / `eXIf`。
-     * 解析失败时**原样返回**，绝不因为一个坏图把保存流程搞崩。
-     */
+    /** Clear PNG text/EXIF chunks and NovelAI pixel carriers; fail rather than leak on invalid PNG. */
     fun stripPngMetadata(bytes: ByteArray): ByteArray {
-        if (bytes.size < 8 || bytes[0] != 0x89.toByte() || bytes[1] != 0x50.toByte()) return bytes
-        return try {
-            val output = ByteArrayOutputStream(bytes.size)
-            output.write(bytes, 0, 8) // PNG 签名
-            var offset = 8
-            while (offset + 12 <= bytes.size) {
-                val length = readInt(bytes, offset)
-                if (length < 0 || offset + 12 + length > bytes.size) return bytes
-                val type = String(bytes, offset + 4, 4, Charsets.US_ASCII)
-                if (type !in PNG_METADATA_CHUNKS) {
-                    output.write(bytes, offset, 12 + length)
-                }
-                offset += 12 + length
-                if (type == "IEND") break
-            }
-            output.toByteArray()
-        } catch (e: Exception) {
-            bytes
+        val signature = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+        require(bytes.size >= 8 && signature.indices.all { bytes[it] == signature[it] }) {
+            "Cannot clear metadata: image is not a PNG"
         }
+        val output = ByteArrayOutputStream(bytes.size)
+        output.write(signature)
+        var offset = 8
+        var ended = false
+        while (offset + 12 <= bytes.size) {
+            val length = readInt(bytes, offset)
+            require(length >= 0 && length <= bytes.size - offset - 12) { "Invalid PNG chunk" }
+            val type = String(bytes, offset + 4, 4, Charsets.US_ASCII)
+            if (type !in PNG_METADATA_CHUNKS) output.write(bytes, offset, 12 + length)
+            offset += 12 + length
+            if (type == "IEND") { ended = true; break }
+        }
+        require(ended) { "Incomplete PNG: metadata removal failed" }
+        return com.kallan.naistudio.models.StealthPng.stripHiddenMetadata(output.toByteArray())
     }
 
     private fun readInt(bytes: ByteArray, offset: Int): Int =

@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import com.kallan.naistudio.ui.RefOutlinedButton as OutlinedButton
 import androidx.compose.material3.Text
 import com.kallan.naistudio.ui.RefTextButton as TextButton
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -201,6 +202,14 @@ fun ImageParamsDialog(
                 ) {
                     TextButton(onClick = onReuse) { Text(t("gallery.reuseParams")) }
                     TextButton(onClick = onRename) { Text(t("gallery.rename")) }
+                }
+                SelectionContainer {
+                    Text(
+                        "存储位置（App 内原图）：\n${item.filePath}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = com.kallan.naistudio.ui.LocalRef.current.muted,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
                 }
             }
         },

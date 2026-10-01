@@ -146,6 +146,7 @@ fun SettingsScreen(state: AppState) {
                 Text(t("settings.imageOutputDir"), style = MaterialTheme.typography.labelMedium)
                 OutlinedButton(
                     onClick = { pickFolder.launch(null) },
+                    enabled = settings.saveToGallery,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(

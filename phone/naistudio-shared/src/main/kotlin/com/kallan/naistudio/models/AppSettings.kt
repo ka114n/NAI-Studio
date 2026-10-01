@@ -170,7 +170,7 @@ data class AppSettings(
     /** false 时保存前剥掉 PNG 的 tEXt/iTXt/zTXt/eXIf 块。 */
     val keepImageMetadata: Boolean = true,
     /** 保存后是否再往系统相册写一份。 */
-    val saveToGallery: Boolean = true,
+    val saveToGallery: Boolean = false,
     /** 流式预览开关。当前里程碑未实现流式，保留字段以对齐设置项。 */
     val streamPreviewEnabled: Boolean = true,
 

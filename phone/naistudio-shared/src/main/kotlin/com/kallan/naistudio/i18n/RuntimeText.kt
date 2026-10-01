@@ -233,7 +233,7 @@ object RuntimeText {
         "settings.credits" to "致谢",
         "settings.creditsHint" to "这个 App 站在别人的肩膀上。以下是直接用到的东西。",
         "settings.creditHarnessRole" to "漫画插件框架的参考实现：工具 / 技能 / 预设三层结构、V5 分镜写法、大量行为口径都出自这里。",
-        "settings.creditCodexRole" to "画师超市的数据来源（开源项目 AgIzT/NovelAI-Tag，代码 MIT）。词条原文归各原编纂者，数据汇编未经许可不得再分发 —— 所以只在线读取，没有打包进 App。",
+        "settings.creditCodexRole" to "所长法典的数据来源（开源项目 AgIzT/NovelAI-Tag，代码 MIT）。词条原文归各原编纂者，数据汇编未经许可不得再分发 —— 所以只在线读取，没有打包进 App。",
         "status.backupExporting" to "正在导出备份...",
         "status.backupExported" to "备份已导出",
         "status.backupExportedToImage" to "已把备份内嵌进图片并导出",
@@ -736,8 +736,8 @@ object RuntimeText {
         "anima.tapNameHint" to "点名字复制，点作品看该作品的角色",
         "anima.filteredBySeries" to "已筛选作品：{name}",
 
-        // ---- 画师超市（法典图鉴 · NovelAI v5 画师词典）----
-        "tagcodex.title" to "画师超市",
+        // ---- 所长法典（法典图鉴 · NovelAI v5 画师词典）----
+        "tagcodex.title" to "所长法典",
         "tagcodex.hintShort" to "查 NovelAI 画师与画风提示词",
         "tagcodex.search" to "搜索画师",
         // 胶囊里当 placeholder 用，得短到一行放得下
@@ -996,9 +996,9 @@ object RuntimeText {
         "settings.paletteHueAmber" to "琥珀",
         "settings.keepMetadata" to "保留图片元数据",
         "settings.saveToGallery" to "同时保存到系统相册",
-        "settings.saveToGalleryHint" to "关掉只写 App 私有目录",
+        "settings.saveToGalleryHint" to "关闭后只自动保存到 App 私有目录，不写系统相册或自定义共享文件夹",
         "settings.imageOutputDir" to "自定义保存目录",
-        "settings.imageOutputDirHint" to "点上面的按钮选一个文件夹：每张图除了 App 内部保留一份（图库与编辑要用），会再另存一份到这个文件夹；不选就不另存",
+        "settings.imageOutputDirHint" to "仅开启系统相册保存时自动另存到此文件夹。关闭后暂停另存，图片只保留在 App 私有目录；共享文件夹可能被相册扫描",
         "storage.folderNone" to "点击选择文件夹",
         "storage.folderClear" to "清除（不再另存）",
         "storage.folderSet" to "已设置保存目录，之后每张图都会另存一份过去",
@@ -1571,7 +1571,7 @@ object RuntimeText {
         // ---- Tools page: source data (image metadata) ----
         "metadata.title" to "Metadata",
         // ---- Tools page: Artist market (Codex Atlas / NovelAI v5 artist dictionary) ----
-        "tagcodex.title" to "Artist market",
+        "tagcodex.title" to "Director Codex",
         "tagcodex.hintShort" to "Browse NovelAI artist and style tags",
         "tagcodex.search" to "Search artists",
         // used as the capsule placeholder, so it has to fit on one line
@@ -1866,9 +1866,9 @@ object RuntimeText {
         "settings.paletteHueAmber" to "Amber",
         "settings.keepMetadata" to "Keep image metadata",
         "settings.saveToGallery" to "Also save to the system gallery",
-        "settings.saveToGalleryHint" to "Off writes to the app folder only",
+        "settings.saveToGalleryHint" to "Off saves only in private app storage; no gallery or shared-folder copy",
         "settings.imageOutputDir" to "Custom output folder",
-        "settings.imageOutputDirHint" to "Tap the button above to pick a folder: every image keeps an internal copy (the gallery and editing need it) and is also saved into that folder. Nothing is copied when unset",
+        "settings.imageOutputDirHint" to "Automatic shared-folder copies require gallery saving to be enabled. Off keeps images in private app storage. Shared folders may be indexed by gallery apps.",
         "storage.folderNone" to "Tap to pick a folder",
         "storage.folderClear" to "Clear (stop copying)",
         "storage.folderSet" to "Output folder set; every image will also be saved there",

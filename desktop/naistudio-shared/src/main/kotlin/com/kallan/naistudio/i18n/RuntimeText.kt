@@ -262,7 +262,7 @@ object RuntimeText {
         "settings.credits" to "致谢",
         "settings.creditsHint" to "这个 App 站在别人的肩膀上。以下是直接用到的东西。",
         "settings.creditHarnessRole" to "漫画插件框架的参考实现：工具 / 技能 / 预设三层结构、V5 分镜写法、大量行为口径都出自这里。",
-        "settings.creditCodexRole" to "画师超市的数据来源（开源项目 AgIzT/NovelAI-Tag，代码 MIT）。词条原文归各原编纂者，数据汇编未经许可不得再分发 —— 所以只在线读取，没有打包进 App。",
+        "settings.creditCodexRole" to "所长法典的数据来源（开源项目 AgIzT/NovelAI-Tag，代码 MIT）。词条原文归各原编纂者，数据汇编未经许可不得再分发 —— 所以只在线读取，没有打包进 App。",
         "status.backupExporting" to "正在导出备份...",
         "status.backupExported" to "备份已导出",
         "status.backupExportedToImage" to "已把备份内嵌进图片并导出",
@@ -779,8 +779,8 @@ object RuntimeText {
         "anima.tapNameHint" to "点名字复制，点作品看该作品的角色",
         "anima.filteredBySeries" to "已筛选作品：{name}",
 
-        // ---- 画师超市（法典图鉴 · NovelAI v5 画师词典）----
-        "tagcodex.title" to "画师超市",
+        // ---- 所长法典（法典图鉴 · NovelAI v5 画师词典）----
+        "tagcodex.title" to "所长法典",
         "tagcodex.hintShort" to "查 NovelAI 画师与画风提示词",
         "tagcodex.search" to "搜索画师",
         // 胶囊里当 placeholder 用，得短到一行放得下
@@ -2053,7 +2053,7 @@ object RuntimeText {
         // ---- Tools page: source data (image metadata) ----
         "metadata.title" to "Metadata",
         // ---- Tools page: Artist market (Codex Atlas / NovelAI v5 artist dictionary) ----
-        "tagcodex.title" to "Artist market",
+        "tagcodex.title" to "Director Codex",
         "tagcodex.hintShort" to "Browse NovelAI artist and style tags",
         "tagcodex.search" to "Search artists",
         // used as the capsule placeholder, so it has to fit on one line

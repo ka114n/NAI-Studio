@@ -151,8 +151,10 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -3011,82 +3013,60 @@ private fun PromptTextField(
         if (!readOnly && focused) keyboard?.hide()
     }
 
-    /**
-     * 「光标尾巴」的定位器。
-     *
-     * ## 为什么需要它
-     *
-     * 用户的抱怨：**回车 / 换行之后画面不跟着光标走**，光标落到可见区下面去了。
-     *
-     * 正常应该由输入框自己发 `bringIntoView` 请求、祖先的滚动容器接住。但这个请求在
-     * **高度不受限**的 `BasicTextField` 上会被**吃掉却滚不动**：它内部那个可滚动节点
-     * （`maxLines = Int.MAX_VALUE` 时高度随内容长）`maxValue` 恒为 0，请求落到它身上
-     * 就到此为止，永远不会再往上传给抽屉的滚动容器。
-     *
-     * 所以这里在输入框**外面**、紧贴它底部放一个 1dp 的小标记：它不在输入框的节点里，
-     * 请求直接落到抽屉的滚动容器上，不会被吞。每敲一次（含换行）就把它顶进可见区 ——
-     * 它就贴在光标所在那一行的下方，于是"光标跟着走"。
-     */
-    val tailRequester = remember { BringIntoViewRequester() }
+    // Keep the selection and IME composition locally; app state still stores plain text.
+    var editingValue by remember { mutableStateOf(TextFieldValue(value)) }
+    val fieldValue = editingValue.copy(text = value)
+    SideEffect {
+        if (editingValue != fieldValue) editingValue = fieldValue
+    }
+    var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val cursorRequester = remember { BringIntoViewRequester() }
+    val imeBottomPx = WindowInsets.ime.getBottom(LocalDensity.current)
 
-    BasicTextField(
-        // ⚠️ 回到**`String` 重载**（用户 2026-09-24：补全太卡，去掉）——
-        //    上一版为了拿光标位置改用了 `TextFieldValue` 重载；补全删掉之后
-        //    没有必要再维护一份 `TextFieldValue`（那是**每敲一个字都要新建一个对象**），
-        //    回到最省的 `String` 重载。
-        value = value,
-        onValueChange = onValueChange,
-        readOnly = readOnly,
-        textStyle = textStyle.copy(color = color),
-        cursorBrush = SolidColor(LocalRef.current.accent),
-        // 每个输入框各自 remember 一个转换器（内部带缓存，共用会互相顶掉）
-        visualTransformation = if (highlight) {
-            rememberPromptHighlight()
-        } else {
-            VisualTransformation.None
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            // 长按选词、把选词手柄往下拖时，让抽屉跟着手指滚（用户 2026-09-16 报的问题）。
-            // 这类框高度不受限，它自己发不出能生效的滚动请求 —— 见 SelectionScroll.kt。
-            .followFingerForSelection()
-            .onFocusChanged {
-                focused = it.isFocused
-                onFocusChange(it.isFocused)
+    // Attach outside BasicTextField's internal scroll node so the drawer receives the request.
+    Box(Modifier.fillMaxWidth().bringIntoViewRequester(cursorRequester)) {
+        BasicTextField(
+            value = fieldValue,
+            onValueChange = { updated ->
+                editingValue = updated
+                if (updated.text != value) onValueChange(updated.text)
             },
-        decorationBox = { innerTextField ->
-            Column {
+            readOnly = readOnly,
+            textStyle = textStyle.copy(color = color),
+            cursorBrush = SolidColor(LocalRef.current.accent),
+            visualTransformation = if (highlight) {
+                rememberPromptHighlight()
+            } else {
+                VisualTransformation.None
+            },
+            onTextLayout = { textLayout = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .followFingerForSelection()
+                .onFocusChanged {
+                    focused = it.isFocused
+                    onFocusChange(it.isFocused)
+                },
+            decorationBox = { innerTextField ->
                 Box {
                     if (value.isEmpty() && placeholder.isNotEmpty() && !readOnly) {
-                        Text(
-                            placeholder,
-                            style = textStyle,
-                            color = LocalRef.current.faint,
-                        )
+                        Text(placeholder, style = textStyle, color = LocalRef.current.faint)
                     }
                     innerTextField()
                 }
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .bringIntoViewRequester(tailRequester),
-                )
-            }
-        },
-    )
+            },
+        )
+    }
 
-    // 内容一变（打字 / 回车换行 / 粘贴）就把尾巴顶进可见区。
-    //
-    // ⚠️ 就顶**尾巴这一个点**，不额外算余量 —— 这是用户挑定的：
-    // 试过 44dp / 16dp（顶得太高）、2dp（还是不行），最后回到"只让开最下沿那一点"。
-    // 想要光标再往上就调 `bringIntoView(Rect(...))`，别改别的。
-    LaunchedEffect(value) {
-        if (!focused) return@LaunchedEffect
-        // ⚠️ 等这一帧的布局落定再定位：这次换行会让输入框**长高一行**，
-        // 尾巴的新位置要按新布局算；不等的话每次都差一行，越写越偏。
+    // Follow the active selection endpoint, including edits in the middle and keyboard resizing.
+    // Highlighting only changes spans and uses identity offset mapping.
+    LaunchedEffect(focused, fieldValue, textLayout, imeBottomPx) {
+        if (!focused || readOnly) return@LaunchedEffect
         withFrameNanos { }
-        tailRequester.bringIntoView()
+        val layout = textLayout ?: return@LaunchedEffect
+        if (layout.layoutInput.text.text != fieldValue.text) return@LaunchedEffect
+        val offset = fieldValue.selection.end.coerceIn(0, layout.layoutInput.text.length)
+        cursorRequester.bringIntoView(layout.getCursorRect(offset))
     }
 
 }

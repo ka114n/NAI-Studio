@@ -56,6 +56,13 @@ class StealthPngTest {
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
     )
 
+    @Test
+    fun hidden_metadata_is_removed_and_plain_png_is_unchanged() {
+        assertNotNull(StealthPng.decode(fixture))
+        assertNull(StealthPng.decode(StealthPng.stripHiddenMetadata(fixture)))
+        org.junit.Assert.assertArrayEquals(plainPng, StealthPng.stripHiddenMetadata(plainPng))
+    }
+
     // ------------------------------------------------------------ 常量（踩过的坑）
 
     @Test
