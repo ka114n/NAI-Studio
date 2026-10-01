@@ -1,5 +1,7 @@
 # Project development and backup instructions
 
+The canonical local checkout is `C:/Users/kallan/Desktop/NAI-Studio/source`. Windows and Android verification packages are in the sibling `windows` and `android` directories. Keep this single project folder; do not recreate scattered desktop project directories.
+
 - After completing a development task and its appropriate verification, commit the source changes and push them to the private `backup` remote (`ka114n/NAI-Studio-backup`). This is standing user authorization. Check that the destination remains private before pushing.
 - Keep backups minimal and recoverable: source code, Gradle wrappers, required assets, tests, configuration templates, and concise change/verification notes. Use Git commits for incremental history.
 - Do not create Releases or upload installation packages as part of routine backup. The public `origin` repository is updated only when the user explicitly requests publication.

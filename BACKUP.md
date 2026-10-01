@@ -1,5 +1,9 @@
 # Private development backup
 
+## 2026-10-01 local consolidation
+
+The latest source checkout and complete Git history now reside at `C:/Users/kallan/Desktop/NAI-Studio/source`. Windows and Android 1.1.142 validation packages are in the same project root. Copies are verified before older duplicate desktop directories are removed. Signing files stay outside Desktop. Application code is unchanged by this documentation and workspace-location checkpoint.
+
 Repository: `ka114n/NAI-Studio-backup` (private).
 
 The `backup` remote stores development checkpoints. The public `origin` repository and its existing Releases are separate publication destinations. Routine development backups do not publish a release.
