@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NAI Studio 的应用图标（矢量版，可直接给设计工具/网页用）。
+  与 App 里的 res/drawable/ic_launcher_foreground.xml + ic_launcher_background.xml 一致：
+  深青→深靛渐变底 + 近白画框 + 晴蓝星芒；108×108 视口，内容落在安全区（21~87）。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 108 108">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B2A33"/>
+      <stop offset="0.55" stop-color="#0E3B4A"/>
+      <stop offset="1" stop-color="#0A1620"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="108" height="108" rx="24" ry="24"/>
+    </clipPath>
+  </defs>
+
+  <!-- 底：圆角方块（启动器自适应图标会自己裁形，这里给个通用圆角版本） -->
+  <rect x="0" y="0" width="108" height="108" rx="24" ry="24" fill="url(#bg)"/>
+
+  <!-- 前景：画框 + 星芒 -->
+  <g clip-path="url(#squircle)">
+    <path d="M34,42 h32 a6,6 0 0 1 6,6 v26 a6,6 0 0 1 -6,6 h-32 a6,6 0 0 1 -6,-6 v-26 a6,6 0 0 1 6,-6 Z"
+          fill="none" stroke="#F2F7FA" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M76,28 C77.2,33.2 78.8,34.8 84,36 C78.8,37.2 77.2,38.8 76,44 C74.8,38.8 73.2,37.2 68,36 C73.2,34.8 74.8,33.2 76,28 Z"
+          fill="#5BC8E8"/>
+  </g>
+</svg>
