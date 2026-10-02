@@ -42,6 +42,19 @@ import kotlinx.coroutines.flow.first
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                com.kallan.naistudio.services.AndroidFullBackup.recoverInterruptedRestore(applicationContext)
+            }
+        } catch (_: Exception) {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("备份恢复未完成")
+                .setMessage("原数据仍保留在应用内。请不要卸载或清除数据，先联系维护者排查。")
+                .setCancelable(false)
+                .setPositiveButton("关闭") { _, _ -> finish() }
+                .show()
+            return
+        }
         enableEdgeToEdge()
         setContent {
             val state: AppState = viewModel()

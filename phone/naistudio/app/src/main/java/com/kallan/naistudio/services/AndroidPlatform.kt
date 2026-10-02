@@ -96,6 +96,32 @@ class KeystoreSecretStore(context: Context) : SecretStore {
 
     private val prefs = context.getSharedPreferences(PREFS_SECURE, Context.MODE_PRIVATE)
 
+    /** Migration must fail if a stored secret cannot be read; never silently discard it. */
+    fun exportForMigration(): Map<String, String> {
+        val stored = prefs.all
+        if (stored.isEmpty()) return emptyMap()
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val key = (keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
+            ?: error("原有密钥不可用，无法完整导出凭据；现有数据未修改")
+        return stored.mapValues { (_, value) ->
+            val payload = value as? String ?: error("凭据格式错误，无法完整导出")
+            val parts = payload.split(SEPARATOR, limit = 2)
+            require(parts.size == 2) { "凭据格式错误，无法完整导出" }
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, Base64.decode(parts[0], Base64.NO_WRAP)))
+            String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), Charsets.UTF_8)
+        }
+    }
+
+    fun replaceFromMigration(values: Map<String, String>) {
+        check(prefs.edit().clear().commit()) { "无法写入凭据" }
+        values.forEach { (key, value) -> putSecret(key, value) }
+        check(prefs.edit().commit()) { "无法保存凭据" }
+        require(exportForMigration() == values.filterValues { it.isNotBlank() }.mapValues { it.value.trim() }) {
+            "恢复凭据校验失败"
+        }
+    }
+
     private fun secretKey(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         val existing = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry

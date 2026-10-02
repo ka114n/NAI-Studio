@@ -1524,6 +1524,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
     }
 
     fun setParam(update: (GenerateParams) -> GenerateParams) {
+        if (fullBackupInProgress) return
         val before = params
         val updated = update(before)
 
@@ -2095,6 +2096,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
      * 而提示词是即时写的 —— 所以 App 进后台 / 剧情框失焦时必须把这段补上。
      */
     fun flushComicPlot() {
+        if (fullBackupInProgress) return
         comicPlotSaveJob?.cancel()
         comicPlotSaveJob = null
         if (comicPlotDirty) {
@@ -2459,6 +2461,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
     }
 
     fun setSettings(update: (AppSettings) -> AppSettings) {
+        if (fullBackupInProgress) return
         settings = update(settings)
         val snapshot = settings
         viewModelScope.launch { withContext(Dispatchers.IO) { storage.setSettings(snapshot) } }
@@ -4985,6 +4988,92 @@ class AppState(app: Application) : AndroidViewModel(app) {
     }
 
     // -------------------------------------------------------------- 备份 / 恢复
+
+    var fullBackupInProgress by mutableStateOf(false)
+        private set
+
+    var fullBackupMode by mutableStateOf("")
+    var fullBackupMessage by mutableStateOf("")
+    var fullBackupOperationRunning by mutableStateOf(false)
+    var fullBackupVerified by mutableStateOf(false)
+    var fullBackupNeedsClose by mutableStateOf(false)
+
+    fun runFullBackup(uri: Uri, password: CharArray, restore: Boolean) {
+        if (fullBackupOperationRunning || fullBackupNeedsClose) { password.fill('\u0000'); return }
+        fullBackupOperationRunning = true
+        fullBackupVerified = false
+        fullBackupMode = if (restore) "restore" else "export"
+        fullBackupMessage = "等待已有任务完成并保存当前数据…"
+        viewModelScope.launch {
+            try {
+                prepareFullBackup()
+                val context = getApplication<Application>()
+                val progress: (String) -> Unit = { text -> viewModelScope.launch { if (fullBackupOperationRunning) fullBackupMessage = text } }
+                val result = withContext(Dispatchers.IO) {
+                    if (restore) com.kallan.naistudio.services.AndroidFullBackup.restore(context, uri, password, progress)
+                    else com.kallan.naistudio.services.AndroidFullBackup.export(context, uri, password, progress)
+                }
+                fullBackupVerified = true
+                fullBackupNeedsClose = restore
+                fullBackupMessage = if (restore) {
+                    "恢复完成：${result.files} 个文件、${result.secretEntries} 项加密凭据。请关闭应用后重新打开；共享文件夹需要重新授权。"
+                } else {
+                    "完整备份已导出并回读校验通过：${result.files} 个文件、${result.secretEntries} 项加密凭据、${result.bytes / 1024 / 1024} MB 原始文件。请保管备份和密码。"
+                }
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException && error !is kotlinx.coroutines.TimeoutCancellationException) throw error
+                // Do not display parser/provider exception values: they may contain credential data.
+                fullBackupNeedsClose = restore && com.kallan.naistudio.services.AndroidFullBackup.hasPendingRestore(getApplication<Application>())
+                fullBackupMessage = if (fullBackupNeedsClose) {
+                    "恢复未完成，原数据仍保留。请关闭应用后重新打开进行回滚；不要卸载或清除应用数据。"
+                } else {
+                    "未完成。请检查密码、文件权限和存储空间；若原图或画布引用缺失，请先修复。不要卸载原应用。"
+                }
+            } finally {
+                password.fill('\u0000')
+                fullBackupOperationRunning = false
+                if (!fullBackupNeedsClose) finishFullBackup()
+            }
+        }
+    }
+
+    fun finishFullBackup() { fullBackupInProgress = false }
+
+    /** Flush saved application state before taking the migration snapshot. Runs on Main. */
+    suspend fun prepareFullBackup() {
+        loadJob?.join()
+        require(!busy && !infiniteRunning && !llmBusy && !reverseBusy && !storyboardBusy && !authBusy && !berserkBusy) {
+            "请先等待生成、翻译或登录任务完成，再进行完整备份"
+        }
+        require(!fullBackupInProgress) { "完整备份任务正在进行" }
+        persistInfiniteState()
+        fullBackupInProgress = true
+        comicPlotSaveJob?.cancel()
+        comicPlotSaveJob?.join()
+        comicPlotSaveJob = null
+        // Join existing writes/background preparation, rather than assuming a fixed delay is sufficient.
+        val currentJob = kotlinx.coroutines.currentCoroutineContext()[Job]
+        kotlinx.coroutines.withTimeout(120_000) {
+            viewModelScope.coroutineContext[Job]?.children?.toList()?.filter { it != currentJob }?.forEach { it.join() }
+        }
+        val settingsSnapshot = settings
+        val paramsSnapshot = params
+        val extrasSnapshot = extras
+        val styleSnapshot = styleLibrary
+        val memorySnapshot = llmMemory.mapValues { it.value.toList() }
+        withContext(Dispatchers.IO) {
+            storage.setSettings(settingsSnapshot)
+            storage.setStylePresets(styleSnapshot)
+            // When persistence is off, retain dormant saved parameters instead of replacing them with defaults.
+            if (settingsSnapshot.persistGenerateParams) {
+                storage.setParams(paramsSnapshot)
+                storage.setCharacterPrompts(extrasSnapshot.charCaptions)
+                storage.setComicPanels(extrasSnapshot.comicPanels)
+                storage.setComicSettings(persistableComicSettings(extrasSnapshot))
+            }
+            llmMemoryFile().writeText(LlmContext.toMemoryJson(memorySnapshot))
+        }
+    }
 
     /**
      * 把备份**内嵌进一张自选图片**再导出（和 ComfyUI / NovelAI 把参数写进 PNG 一样）：

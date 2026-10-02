@@ -118,6 +118,8 @@ fun ProfileScreen(state: AppState) {
         // LLM API：给生成页那两个图标（翻译 / 优化提示词）用；默认**收起来**（用的人自己展开）
         LlmApiCard(state, t)
 
+        FullBackupControls(state)
+
         SectionCard(t("backup.title")) {
             Text(
                 t("backup.hint"),
