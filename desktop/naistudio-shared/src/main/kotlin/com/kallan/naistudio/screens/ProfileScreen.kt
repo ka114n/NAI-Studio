@@ -891,12 +891,9 @@ private fun LocalApiCard(state: AppState, t: (String) -> String) {
                 selected = !gateway,
                 modifier = Modifier.weight(1f),
             ) {
-                // 切回官方：**模式置 false** + 地址恢复默认（token 不动 —— 它本来就是官方那把）。
-                // ⚠️ 模式那一位必须**显式写**：早前靠"地址像不像第三方"推，点「第三方」时地址
-                //    还是空的 ⇒ 推出来是官方 ⇒ 刚点亮就熄、界面没反应（真机 bug）。
-                state.setSettings {
-                    it.copy(useThirdPartyApi = false, imageBaseUrl = DEFAULT_IMAGE_BASE)
-                }
+                // Official and third-party credentials/endpoints are stored independently.
+                state.setSettings { it.copy(useThirdPartyApi = false) }
+                state.refreshGatewayQuota()
             }
             SourceChip(
                 label = t("api.thirdParty"),
@@ -904,25 +901,17 @@ private fun LocalApiCard(state: AppState, t: (String) -> String) {
                 selected = gateway,
                 modifier = Modifier.weight(1f),
             ) {
-                // 切到第三方：模式置 true，地址**只在还是官方默认值时**清空 ——
-                // 留着官方地址会让人以为已经连上了（实际是拿虚拟 Key 打官方，必然 401）；
-                // 但如果用户之前填过自己的站点，**别把他的地址冲掉**。
-                state.setSettings {
-                    val keep = it.imageBaseUrl.takeIf { url ->
-                        url.isNotBlank() && url.trimEnd('/') != DEFAULT_IMAGE_BASE
-                    }
-                    it.copy(useThirdPartyApi = true, imageBaseUrl = keep ?: "")
-                }
+                state.setSettings { it.copy(useThirdPartyApi = true) }
                 state.refreshGatewayQuota()
             }
         }
         if (gateway) {
-            var base by remember(settings.imageBaseUrl) { mutableStateOf(settings.imageBaseUrl) }
+            var base by remember(settings.thirdPartyBaseUrl) { mutableStateOf(settings.thirdPartyBaseUrl) }
             OutlinedTextField(
                 value = base,
                 onValueChange = { value ->
                     base = value
-                    state.setSettings { it.copy(imageBaseUrl = value) }
+                    state.setSettings { it.copy(thirdPartyBaseUrl = value) }
                 },
                 label = { Text(t("api.serverUrl")) },
                 supportingText = { Text(t("api.baseUrlHint")) },
@@ -930,8 +919,10 @@ private fun LocalApiCard(state: AppState, t: (String) -> String) {
                 modifier = Modifier.fillMaxWidth(),
             )
             // 改完地址就把网关那块配额拉一次（拉不到就什么都不显示，见 GatewayQuotaRow）
-            LaunchedEffect(base) { state.refreshGatewayQuota() }
-            GatewayQuotaRow(state, t)
+            LaunchedEffect(base) {
+                kotlinx.coroutines.delay(400)
+                state.refreshGatewayQuota()
+            }
         }
         NovelAiTokenBlock(state, t)
     }
@@ -975,33 +966,37 @@ private fun SourceChip(
     }
 }
 
-/**
- * 网关自己的额度（NAI Gate 独有的 `naiGate` 那一块）。
- *
- * 拉不到 / 不是网关 ⇒ **整块不画**（`gatewayQuota` 是 null）——
- * 不编一个"剩余 0"出来，那比不显示更容易让人误会额度没了。
- */
+/** Server-provided quota only; unavailable data must not be shown as zero. */
 @Composable
 private fun GatewayQuotaRow(state: AppState, t: (String) -> String) {
-    val quota = state.gatewayQuota ?: return
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            if (quota.v5Unlimited) {
-                t("api.gatewayQuotaUnlimited")
-            } else {
-                t("api.gatewayQuota")
-                    .replace("{left}", quota.v5LeftToday.toString())
-                    .replace("{limit}", quota.v5DailyLimit.toString())
-            },
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (quota.anlasEnabled) {
+    val quota = state.gatewayQuota
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(t("api.remainingQuota"), style = MaterialTheme.typography.labelMedium)
+        if (quota == null) {
             Text(
-                t("api.gatewayAnlas").replace("{n}", quota.anlasLeft.toString()),
+                t(if (state.gatewayQuotaLoading) "generate.reading" else "api.quotaUnavailable"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            return@Column
         }
+        Text(
+            if (quota.imageModelScope != "all") t("api.v5Unavailable")
+            else if (quota.v5Unlimited) t("api.gatewayQuotaUnlimited")
+            else t("api.gatewayQuota")
+                .replace("{left}", quota.v5LeftToday.toString())
+                .replace("{limit}", quota.v5DailyLimit.toString()),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            if (!quota.anlasEnabled) t("api.anlasDisabled")
+            else if (quota.anlasMonthlyLimit <= 0) t("api.anlasUnlimited")
+            else t("api.gatewayAnlasRemaining")
+                .replace("{left}", quota.anlasLeft.toString())
+                .replace("{limit}", quota.anlasMonthlyLimit.toString()),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -1092,15 +1087,16 @@ private fun HostedAccountCard(state: AppState, t: (String) -> String) {
 @Composable
 private fun NovelAiTokenBlock(state: AppState, t: (String) -> String) {
     val scope = rememberCoroutineScope()
-    var tokenInput by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
+    val gateway = state.usingGateway
+    var tokenInput by remember(gateway) { mutableStateOf("") }
+    var message by remember(gateway) { mutableStateOf("") }
     var verifying by remember { mutableStateOf(false) }
 
     OutlinedTextField(
         value = tokenInput,
         onValueChange = { tokenInput = it; message = "" },
-        label = { Text(t("settings.token")) },
-        supportingText = { Text(t("settings.tokenHint")) },
+        label = { Text(t(if (gateway) "api.thirdPartyKey" else "settings.token")) },
+        supportingText = { Text(t(if (gateway) "api.thirdPartyKeyHint" else "settings.tokenHint")) },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier
@@ -1113,30 +1109,36 @@ private fun NovelAiTokenBlock(state: AppState, t: (String) -> String) {
                 verifying = true
                 scope.launch {
                     val error = state.setToken(tokenInput)
-                    message = error ?: t("settings.tokenSaved")
+                    message = error ?: t(if (gateway) "api.keySaved" else "settings.tokenSaved")
                     if (error == null) tokenInput = ""
                     verifying = false
                 }
             },
             enabled = !verifying && tokenInput.isNotBlank(),
             modifier = Modifier.weight(1f),
-        ) { Text(if (verifying) t("generate.reading") else t("settings.verifyToken")) }
+        ) { Text(if (verifying) t("generate.reading") else t(if (gateway) "api.verifyKey" else "settings.verifyToken")) }
 
         OutlinedButton(
             onClick = {
                 state.clearToken()
-                message = t("settings.tokenCleared")
+                message = t(if (gateway) "api.keyCleared" else "settings.tokenCleared")
             },
             modifier = Modifier.weight(1f),
-        ) { Text(t("settings.clearToken")) }
+        ) { Text(t(if (gateway) "api.clearKey" else "settings.clearToken")) }
 
-        TextButton(onClick = { state.refreshAnlas() }) { Text(t("common.retry")) }
+        TextButton(onClick = {
+            if (gateway) state.refreshGatewayQuota() else state.refreshAnlas()
+        }) { Text(t(if (gateway) "api.refreshQuota" else "common.retry")) }
     }
 
     if (message.isNotEmpty()) {
         Text(message, style = MaterialTheme.typography.bodySmall)
     }
 
+    if (gateway) {
+        GatewayQuotaRow(state, t)
+        return
+    }
     val account = state.account
     if (account.hasToken) {
         Text(

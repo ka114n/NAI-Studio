@@ -773,6 +773,7 @@ private fun LocalApiCard(state: AppState, t: (String) -> String) {
                 // 切回官方：只翻这个开关 —— **官方的地址与 token 一直原样留着**，
                 // 不用重填（用户 2026-09-26：「第三方和官方的 api 分开存储啊，可切换」）。
                 state.setSettings { it.copy(useThirdPartyApi = false) }
+                state.refreshGatewayQuota()
             }
             SourceChip(
                 label = t("api.thirdParty"),
@@ -803,8 +804,10 @@ private fun LocalApiCard(state: AppState, t: (String) -> String) {
                 modifier = Modifier.fillMaxWidth(),
             )
             // 改完地址就把网关那块配额拉一次（拉不到就什么都不显示，见 GatewayQuotaRow）
-            LaunchedEffect(base) { state.refreshGatewayQuota() }
-            GatewayQuotaRow(state, t)
+            LaunchedEffect(base) {
+                kotlinx.coroutines.delay(400)
+                state.refreshGatewayQuota()
+            }
         }
         // ⚠️ token 那一段也要跟着走当前档：网关 → 网关那把 Key，官方 → 官方那把。
         NovelAiTokenBlock(state, t)
@@ -849,33 +852,37 @@ private fun SourceChip(
     }
 }
 
-/**
- * 网关自己的额度（NAI Gate 独有的 `naiGate` 那一块）。
- *
- * 拉不到 / 不是网关 ⇒ **整块不画**（`gatewayQuota` 是 null）——
- * 不编一个"剩余 0"出来，那比不显示更容易让人误会额度没了。
- */
+/** Server-provided quota only; unavailable data must not be shown as zero. */
 @Composable
 private fun GatewayQuotaRow(state: AppState, t: (String) -> String) {
-    val quota = state.gatewayQuota ?: return
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            if (quota.v5Unlimited) {
-                t("api.gatewayQuotaUnlimited")
-            } else {
-                t("api.gatewayQuota")
-                    .replace("{left}", quota.v5LeftToday.toString())
-                    .replace("{limit}", quota.v5DailyLimit.toString())
-            },
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (quota.anlasEnabled) {
+    val quota = state.gatewayQuota
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(t("api.remainingQuota"), style = MaterialTheme.typography.labelMedium)
+        if (quota == null) {
             Text(
-                t("api.gatewayAnlas").replace("{n}", quota.anlasLeft.toString()),
+                t(if (state.gatewayQuotaLoading) "generate.reading" else "api.quotaUnavailable"),
                 style = MaterialTheme.typography.bodySmall,
                 color = com.kallan.naistudio.ui.LocalRef.current.muted,
             )
+            return@Column
         }
+        Text(
+            if (quota.imageModelScope != "all") t("api.v5Unavailable")
+            else if (quota.v5Unlimited) t("api.gatewayQuotaUnlimited")
+            else t("api.gatewayQuota")
+                .replace("{left}", quota.v5LeftToday.toString())
+                .replace("{limit}", quota.v5DailyLimit.toString()),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            if (!quota.anlasEnabled) t("api.anlasDisabled")
+            else if (quota.anlasMonthlyLimit <= 0) t("api.anlasUnlimited")
+            else t("api.gatewayAnlasRemaining")
+                .replace("{left}", quota.anlasLeft.toString())
+                .replace("{limit}", quota.anlasMonthlyLimit.toString()),
+            style = MaterialTheme.typography.bodySmall,
+            color = com.kallan.naistudio.ui.LocalRef.current.muted,
+        )
     }
 }
 
@@ -964,15 +971,16 @@ private fun HostedAccountCard(state: AppState, t: (String) -> String) {
 @Composable
 private fun NovelAiTokenBlock(state: AppState, t: (String) -> String) {
     val scope = rememberCoroutineScope()
-    var tokenInput by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
+    val gateway = state.usingGateway
+    var tokenInput by remember(gateway) { mutableStateOf("") }
+    var message by remember(gateway) { mutableStateOf("") }
     var verifying by remember { mutableStateOf(false) }
 
     OutlinedTextField(
         value = tokenInput,
         onValueChange = { tokenInput = it; message = "" },
-        label = { Text(t("settings.token")) },
-        supportingText = { Text(t("settings.tokenHint")) },
+        label = { Text(t(if (gateway) "api.thirdPartyKey" else "settings.token")) },
+        supportingText = { Text(t(if (gateway) "api.thirdPartyKeyHint" else "settings.tokenHint")) },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth(),
@@ -983,30 +991,36 @@ private fun NovelAiTokenBlock(state: AppState, t: (String) -> String) {
                 verifying = true
                 scope.launch {
                     val error = state.setToken(tokenInput)
-                    message = error ?: t("settings.tokenSaved")
+                    message = error ?: t(if (gateway) "api.keySaved" else "settings.tokenSaved")
                     if (error == null) tokenInput = ""
                     verifying = false
                 }
             },
             enabled = !verifying && tokenInput.isNotBlank(),
             modifier = Modifier.weight(1f),
-        ) { Text(if (verifying) t("generate.reading") else t("settings.verifyToken")) }
+        ) { Text(if (verifying) t("generate.reading") else t(if (gateway) "api.verifyKey" else "settings.verifyToken")) }
 
         OutlinedButton(
             onClick = {
                 state.clearToken()
-                message = t("settings.tokenCleared")
+                message = t(if (gateway) "api.keyCleared" else "settings.tokenCleared")
             },
             modifier = Modifier.weight(1f),
-        ) { Text(t("settings.clearToken")) }
+        ) { Text(t(if (gateway) "api.clearKey" else "settings.clearToken")) }
 
-        TextButton(onClick = { state.refreshAnlas() }) { Text(t("common.retry")) }
+        TextButton(onClick = {
+            if (gateway) state.refreshGatewayQuota() else state.refreshAnlas()
+        }) { Text(t(if (gateway) "api.refreshQuota" else "common.retry")) }
     }
 
     if (message.isNotEmpty()) {
         Text(message, style = MaterialTheme.typography.bodySmall)
     }
 
+    if (gateway) {
+        GatewayQuotaRow(state, t)
+        return
+    }
     val account = state.account
     if (account.hasToken) {
         Text(

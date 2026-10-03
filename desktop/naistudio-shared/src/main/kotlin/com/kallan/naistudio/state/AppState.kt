@@ -452,7 +452,7 @@ class AppState(private val platform: Platform) : ViewModel() {
     // 那个项目（NAI Gate）对客户端而言就是一个"能改地址的 NovelAI"：站点根地址填进
     // 「NAI API」那张卡的接口地址、`nai-...` 虚拟 Key 当 token 填进来就行，**不需要另做协议**。
     // 这里只补两件它做不到、又必须让用户知道的事（细节见 `NaiApi` 里那一大段）：
-    //  ① 它**没开 img2img / 局部重绘** ⇒ 进这些模式时先提示，别让用户白等一次请求；
+    //  ① 图生图 / 局部重绘由服务器按权限判定，不在客户端预先拦截；
     //  ② 它的 V5 日额度在另一条接口上 ⇒ 拉回来给「我的」那张卡显示。
     // -----------------------------------------------------------------------
 
@@ -470,21 +470,31 @@ class AppState(private val platform: Platform) : ViewModel() {
     /** 网关自己那块配额（V5 今天还剩几张 / 本月 Anlas）；没拉到或不是网关 ⇒ null。 */
     var gatewayQuota by mutableStateOf<GatewayQuota?>(null)
         private set
+    var gatewayQuotaLoading by mutableStateOf(false)
+        private set
+    private var gatewayQuotaRefreshJob: Job? = null
 
     /**
      * 拉一次网关配额。**只在用网关时发**，失败静默（这块是附加信息，不是主流程）。
      * 调用时机：设置里改完地址之后、以及「我的」那张卡刷新余额时。
      */
     fun refreshGatewayQuota() {
-        if (!usingGateway) {
-            gatewayQuota = null
-            return
-        }
+        gatewayQuotaRefreshJob?.cancel()
+        gatewayQuota = null
+        gatewayQuotaLoading = false
         val token = effectiveToken()
-        if (token.isBlank()) return
-        viewModelScope.launch {
-            gatewayQuota = api.fetchGatewayQuota(token, effectiveImageBase())
-        }    }
+        val base = effectiveImageBase()
+        if (!usingGateway || token.isBlank() || settings.thirdPartyBaseUrl.isBlank()) return
+        gatewayQuotaLoading = true
+        gatewayQuotaRefreshJob = viewModelScope.launch {
+            val quota = api.fetchGatewayQuota(token, base)
+            // A slow response from an earlier server/key must not overwrite the current quota.
+            if (usingGateway && effectiveToken() == token && effectiveImageBase() == base) {
+                gatewayQuota = quota
+                gatewayQuotaLoading = false
+            }
+        }
+    }
 
     /**
      * 网关模式下的**站点地址填了没**（用户 2026-09-26：「第三方**也不使用官方 api** 啊」）。
@@ -2870,6 +2880,8 @@ class AppState(private val platform: Platform) : ViewModel() {
         if (usingGateway) storage.clearGatewayToken() else storage.clearToken()
         hasToken = false
         account = AccountSummary(hasToken = false)
+        gatewayQuotaRefreshJob?.cancel()
+        gatewayQuotaLoading = false
         gatewayQuota = null
         status = rt("settings.tokenCleared")
     }
