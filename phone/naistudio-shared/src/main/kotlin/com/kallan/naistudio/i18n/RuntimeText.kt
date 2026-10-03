@@ -410,8 +410,6 @@ object RuntimeText {
         "api.gatewayQuota" to "V5 今日剩余 {left}/{limit}",
         "api.gatewayQuotaUnlimited" to "V5 不限量",
         "api.gatewayAnlas" to "本月 Anlas 剩余 {n}",
-        // 网关**没开**这两个功能（它的 README 与《用户限制说明》都写明"当前未开放"）
-        "gateway.unsupported" to "当前是第三方网关，没有开放{action}，请切回官方接口再用。",
         "gateway.img2img" to "图生图",
         "gateway.infill" to "局部重绘",
         // 网关模式下**地址没填**（用户 2026-09-26：「第三方**也不使用官方 api** 啊」）——
@@ -1300,7 +1298,6 @@ object RuntimeText {
         "api.gatewayQuota" to "V5 left today {left}/{limit}",
         "api.gatewayQuotaUnlimited" to "V5 unlimited",
         "api.gatewayAnlas" to "Anlas left this month {n}",
-        "gateway.unsupported" to "The third-party gateway does not offer {action}; switch back to the official API.",
         "gateway.img2img" to "image-to-image",
         "gateway.infill" to "inpainting",
 

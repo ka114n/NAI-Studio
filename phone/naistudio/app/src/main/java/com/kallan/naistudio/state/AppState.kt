@@ -471,21 +471,6 @@ class AppState(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * 进图生图 / 遮罩重绘之前问一句：**这条路上这两样是不通的**（网关没实现）。
-     *
-     * 返回 true = 放行。用网关时返回 false 并弹一句人话，调用方直接 return。
-     * ⚠️ 判据收在这一处，别散到各按钮上 —— 以后网关支持了，改这一个地方。
-     */
-    private fun gatewayAllows(action: String): Boolean {
-        if (!usingGateway || !api.gatewayUnsupportedAction(action)) return true
-        toast(
-            rf("gateway.unsupported", mapOf("action" to action)),
-            isError = true,
-        )
-        return false
-    }
-
-    /**
      * 网关模式下的**站点地址填了没**（用户 2026-09-26：「第三方**也不使用官方 api** 啊」）。
      *
      * ⚠️ 这一条是**必须**的：所有请求最终都过 `NaiApi.normalizeBase(base, DEFAULT_IMAGE_BASE)`，
@@ -6431,12 +6416,11 @@ class AppState(app: Application) : AndroidViewModel(app) {
         when {
             // 有聚焦框时，**框里没涂也算重绘**（官方：留空 = 整框重绘）—— 否则会掉到图生图
             maskActive || (maskMode && maskFocusRect != null) -> {
-                // ⚠️ 第三方网关**没开局部重绘**（见 `gatewayAllows` 的说明）：先拦、给一句人话，
-                //    别让用户等到网关回一个 4xx 才知道。
-                if (gatewayAddressReady() && gatewayAllows("infill")) inpaintRegion()
+                // 功能权限由服务器判定；客户端仅检查网关地址。
+                if (gatewayAddressReady()) inpaintRegion()
             }
             img2imgActive -> {
-                if (gatewayAddressReady() && gatewayAllows("img2img")) runImg2Img()
+                if (gatewayAddressReady()) runImg2Img()
             }
             else -> if (gatewayAddressReady()) generate()
         }

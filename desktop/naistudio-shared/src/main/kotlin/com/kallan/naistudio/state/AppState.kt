@@ -487,21 +487,6 @@ class AppState(private val platform: Platform) : ViewModel() {
         }    }
 
     /**
-     * 进图生图 / 遮罩重绘之前问一句：**这条路上这两样是不通的**（网关没实现）。
-     *
-     * 返回 true = 放行。用网关时返回 false 并弹一句人话，调用方直接 return。
-     * ⚠️ 判据收在这一处，别散到各按钮上 —— 以后网关支持了，改这一个地方。
-     */
-    private fun gatewayAllows(action: String): Boolean {
-        if (!usingGateway || !api.gatewayUnsupportedAction(action)) return true
-        toast(
-            rf("gateway.unsupported", mapOf("action" to action)),
-            isError = true,
-        )
-        return false
-    }
-
-    /**
      * 网关模式下的**站点地址填了没**（用户 2026-09-26：「第三方**也不使用官方 api** 啊」）。
      *
      * ⚠️ 这一条是**必须**的：所有请求最终都过 `NaiApi.normalizeBase(base, DEFAULT_IMAGE_BASE)`，
@@ -6804,11 +6789,9 @@ class AppState(private val platform: Platform) : ViewModel() {
             return
         }
         when (runAction) {
-            // ⚠️ 第三方网关（NAI Gate）**没开局部重绘 / 图生图** ⇒ 先拦、给一句人话，
-            //    别让用户等到网关回一个 4xx 才知道（见 `gatewayAllows` 与 `NaiApi` 尾部说明）。
-            //    地址没填也先拦住（否则会回落到官方地址，见 `gatewayAddressReady`）。
-            RunAction.INPAINT -> if (gatewayAddressReady() && gatewayAllows("infill")) inpaintRegion()
-            RunAction.IMG2IMG -> if (gatewayAddressReady() && gatewayAllows("img2img")) runImg2Img()
+            // 功能权限由服务器判定；客户端仅检查网关地址。
+            RunAction.INPAINT -> if (gatewayAddressReady()) inpaintRegion()
+            RunAction.IMG2IMG -> if (gatewayAddressReady()) runImg2Img()
             RunAction.GENERATE -> if (gatewayAddressReady()) generate()
         }
     }

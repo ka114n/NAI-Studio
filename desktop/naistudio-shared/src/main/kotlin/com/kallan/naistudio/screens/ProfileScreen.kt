@@ -864,8 +864,7 @@ private fun LlmOverrideGroup(
  * 网关对外就是**一套 NovelAI 形状的接口**（`{base}/ai/generate-image`、
  * `{base}/user/data`…），鉴权同样是 `Authorization: Bearer <key>` ⇒
  * 客户端这边**不需要另写一个协议**，把地址填进来就通了。真正要额外做的只有两件：
- *  · 它**没开 img2img / 局部重绘**（README 与《用户限制说明》都写明"当前未开放"）⇒
- *    进这两个模式时先给一句人话（拦在 `AppState.gatewayAllows`）；
+ *  · 图生图 / 局部重绘交由服务器按功能权限决定，拒绝原因按响应显示；
  *  · 它的 V5 日额度 / 月度 Anlas 在 `/user/subscription` 的 `naiGate` 字段里 ⇒
  *    下面 [GatewayQuotaRow] 拉回来显示（官方那边没有这一档）。
  *

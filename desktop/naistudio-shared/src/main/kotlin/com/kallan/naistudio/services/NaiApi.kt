@@ -1018,8 +1018,8 @@ class NaiApi {
             null
         }
         return when (code) {
-            401 -> "Token 无效或已失效（401），请重新获取并填写。"
-            402 -> "账户没有有效订阅或 Anlas 不足（402）。"
+            401 -> message?.let { "请求失败（401）：$it" } ?: "Token 无效或已失效（401），请重新获取并填写。"
+            402 -> message?.let { "请求失败（402）：$it" } ?: "账户没有有效订阅或 Anlas 不足（402）。"
             // 网关那边 429 多半是**全站冷却**（不是"你手速太快"），把它自己的说明带出来
             429 -> message?.let { "请求过于频繁（429）：$it" } ?: "请求过于频繁（429）。"
             else -> if (message != null) {
@@ -1040,8 +1040,7 @@ class NaiApi {
     // 把虚拟 Key 当 token 填进来就行，其余照旧走官方那套 `{base}/ai/...` 路径。
     //
     // 需要额外做的只有下面这四件事：
-    //  ① 它**不支持 img2img / 局部重绘**（README 与《用户限制说明》都写明"当前未开放"）
-    //     ⇒ 提前拦下来给一句人话，别让用户等到一个 4xx；
+    //  ① 图生图 / 局部重绘按服务器权限开放，客户端不预先拦截；
     //  ② 它的 429 是**全站冷却**（图片生成整体暂停 60 秒起）⇒ 提示里带上它自己的说明；
     //  ③ 余额**不用改**：它的 `/user/data` 就是官方同名接口的形状
     //     （`trainingStepsLeft.fixedTrainingStepsLeft`），现成的 `parseAccount` 直接读得出来；
@@ -1090,14 +1089,6 @@ class NaiApi {
             )
         }.getOrNull()
     }
-
-    /**
-     * 网关**明确不支持**的功能：图生图 / 局部重绘（见上面①）。
-     * 判据用 `action`，不碰请求体别的地方 —— 文生图与放大 / 导演工具照旧。
-     */
-    fun gatewayUnsupportedAction(action: String): Boolean =
-        action == "img2img" || action == "infill"
-
 
     private fun normalizeBase(value: String, fallback: String): String {
         val candidate = value.trim().ifEmpty { fallback }
