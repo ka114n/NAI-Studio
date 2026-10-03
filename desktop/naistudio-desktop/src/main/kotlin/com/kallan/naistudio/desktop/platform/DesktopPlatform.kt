@@ -320,7 +320,7 @@ private fun penRotationDegrees(radians: Double): Float {
 
 
 /** 电脑版版本号。见 [Platform.appVersion] 的说明。 */
-const val DESKTOP_VERSION = "1.1.143"
+const val DESKTOP_VERSION = "1.1.148"
 
 /** "关于"里显示的构建标识（电脑版没有 BuildConfig，给个能看出是电脑版的串）。 */
 const val DESKTOP_BUILD_STAMP = "desktop"

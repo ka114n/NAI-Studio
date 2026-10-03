@@ -71,7 +71,7 @@
 
 在 [Releases](https://github.com/ka114n/NAI-Studio/releases) 下载。
 
-当前版本：**1.1.143**。[更新说明](docs/releases/1.1.143.md)
+当前版本：**1.1.148**。[更新说明](docs/releases/1.1.148.md)
 
 双端支持应用内检查、下载及安装更新。1.1.142 及更早版本需手动升级到 1.1.143 一次，之后可在设置 → 关于中更新；Windows 自动替换程序并重启，Android 由系统确认覆盖安装。[更新机制说明](docs/UPDATES.md)
 
