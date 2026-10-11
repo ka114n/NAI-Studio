@@ -114,36 +114,30 @@ fun RefSwitch(
     interactionSource: MutableInteractionSource? = null,
 ) {
     val ref = LocalRef.current
-    val shape = RoundedCornerShape(50)
-    val x by animateDpAsState(if (checked) 19.dp else 3.dp, tween(160), label = "sw")
-    Box(
-        modifier
-            .size(42.dp, 26.dp)
-            .alpha(if (enabled) 1f else 0.38f)
-            .clip(shape)
-            .background(if (checked) ref.accent else ref.subtle)
-            .border(1.5.dp, if (checked) ref.accent else ref.borderStrong, shape)
-            .then(
-                if (onCheckedChange != null) {
-                    Modifier.toggleable(
-                        value = checked,
-                        enabled = enabled,
-                        role = Role.Switch,
-                        onValueChange = onCheckedChange,
-                    )
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
-        Box(
-            Modifier
-                .offset(x = x - 1.5.dp, y = 3.dp - 1.5.dp)
-                .padding(start = 1.5.dp, top = 1.5.dp)
-                .size(17.dp)
-                .clip(CircleShape)
-                .background(if (checked) ref.accentContrast else ref.borderStrong),
-        )
+    val accent = ref.accent
+    val subtle = ref.subtle
+    val border = ref.borderStrong
+    val contrast = ref.accentContrast
+    val progress by animateFloatAsState(if (checked) 1f else 0f, tween(160), label = "switchThumb")
+    val interaction = interactionSource ?: remember { MutableInteractionSource() }
+    Canvas(modifier.size(42.dp, 26.dp).alpha(if (enabled) 1f else 0.38f)
+        .then(if (onCheckedChange != null) Modifier.toggleable(value = checked, enabled = enabled,
+            role = Role.Switch, interactionSource = interaction, indication = null,
+            onValueChange = onCheckedChange) else Modifier)) {
+        val trackHeight = minOf(size.height, size.width)
+        val top = (size.height - trackHeight) / 2f
+        val stroke = minOf(1.5.dp.toPx(), trackHeight / 8f)
+        val radius = trackHeight / 2f
+        val corner = CornerRadius(radius, radius)
+        drawRoundRect(if (checked) accent else subtle, topLeft = Offset(0f, top),
+            size = Size(size.width, trackHeight), cornerRadius = corner)
+        drawRoundRect(if (checked) accent else border, topLeft = Offset(stroke / 2f, top + stroke / 2f),
+            size = Size(size.width - stroke, trackHeight - stroke),
+            cornerRadius = CornerRadius(radius - stroke / 2f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+        val fraction = if (layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl) 1f - progress else progress
+        drawCircle(if (checked) contrast else border, radius = trackHeight * (17f / 52f),
+            center = Offset(radius + (size.width - trackHeight) * fraction, size.height / 2f))
     }
 }
 
@@ -333,6 +327,104 @@ fun RefOutlinedTextField(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RefOutlinedTextField(
+    value: androidx.compose.ui.text.input.TextFieldValue,
+    onValueChange: (androidx.compose.ui.text.input.TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    readOnly: Boolean = false,
+    textStyle: TextStyle = LocalTextStyle.current,
+    label: @Composable (() -> Unit)? = null,
+    placeholder: @Composable (() -> Unit)? = null,
+    leadingIcon: @Composable (() -> Unit)? = null,
+    trailingIcon: @Composable (() -> Unit)? = null,
+    prefix: @Composable (() -> Unit)? = null,
+    suffix: @Composable (() -> Unit)? = null,
+    supportingText: @Composable (() -> Unit)? = null,
+    isError: Boolean = false,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    singleLine: Boolean = false,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    minLines: Int = 1,
+    onTextLayout: (androidx.compose.ui.text.TextLayoutResult) -> Unit = {},
+    interactionSource: MutableInteractionSource? = null,
+    shape: Shape = NaiShape.Field,
+    colors: TextFieldColors = refFieldColors(),
+) {
+    val ref = LocalRef.current
+    val source = interactionSource ?: remember { MutableInteractionSource() }
+    val merged = MaterialTheme.typography.bodyMedium.merge(textStyle)
+        .merge(TextStyle(color = if (textStyle.color != Color.Unspecified) textStyle.color else if (enabled) ref.text else ref.muted))
+    Column(modifier) {
+        if (label != null) {
+            CompositionLocalProvider(LocalContentColor provides ref.muted) {
+                ProvideTextStyle(MaterialTheme.typography.labelMedium.copy(color = ref.muted)) {
+                    Box(Modifier.padding(bottom = 5.dp)) { label() }
+                }
+            }
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp),
+            enabled = enabled,
+            readOnly = readOnly,
+            textStyle = merged,
+            cursorBrush = SolidColor(ref.accent),
+            visualTransformation = visualTransformation,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            interactionSource = source,
+            singleLine = singleLine,
+            maxLines = maxLines,
+            minLines = minLines,
+            onTextLayout = onTextLayout,
+            decorationBox = { inner ->
+                OutlinedTextFieldDefaults.DecorationBox(
+                    value = value.text,
+                    innerTextField = inner,
+                    enabled = enabled,
+                    singleLine = singleLine,
+                    visualTransformation = visualTransformation,
+                    interactionSource = source,
+                    isError = isError,
+                    placeholder = placeholder?.let { p ->
+                        { ProvideTextStyle(merged.copy(color = ref.faint)) { p() } }
+                    },
+                    leadingIcon = leadingIcon,
+                    trailingIcon = trailingIcon,
+                    prefix = prefix,
+                    suffix = suffix,
+                    colors = colors,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                    container = {
+                        OutlinedTextFieldDefaults.Container(
+                            enabled = enabled,
+                            isError = isError,
+                            interactionSource = source,
+                            colors = colors,
+                            shape = shape,
+                            focusedBorderThickness = 2.dp,
+                            unfocusedBorderThickness = 1.dp,
+                        )
+                    },
+                )
+            },
+        )
+        if (supportingText != null) {
+            CompositionLocalProvider(LocalContentColor provides if (isError) ref.negative else ref.faint) {
+                ProvideTextStyle(MaterialTheme.typography.bodySmall.copy(color = if (isError) ref.negative else ref.faint)) {
+                    Box(Modifier.padding(top = 6.dp)) { supportingText() }
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------- 卡片 .card：panel 底 + border + 16 圆角
 
 @Composable
@@ -378,7 +470,7 @@ fun RefModalBottomSheet(
     sheetState: SheetState = rememberModalBottomSheetState(),
     sheetMaxWidth: Dp = BottomSheetDefaults.SheetMaxWidth,
     shape: Shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-    containerColor: Color = LocalRef.current.panel,
+    containerColor: Color = LocalRef.current.sidebar(),
     contentColor: Color = LocalRef.current.text,
     tonalElevation: Dp = 0.dp,
     scrimColor: Color = LocalRef.current.scrim(),
@@ -388,7 +480,9 @@ fun RefModalBottomSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) = ModalBottomSheet(
     onDismissRequest = onDismissRequest,
-    modifier = modifier.border(1.dp, LocalRef.current.border, shape),
+    // Sheet placement/animation is applied inside Material3. An outer border draws at the
+    // unshifted origin and leaves a duplicate outline above the actual sheet.
+    modifier = modifier,
     sheetState = sheetState,
     sheetMaxWidth = sheetMaxWidth,
     shape = shape,
@@ -414,7 +508,7 @@ fun RefAlertDialog(
     title: @Composable (() -> Unit)? = null,
     text: @Composable (() -> Unit)? = null,
     shape: Shape = RoundedCornerShape(20.dp),
-    containerColor: Color = LocalRef.current.panel,
+    containerColor: Color = LocalRef.current.sidebar(),
     iconContentColor: Color = LocalRef.current.accent,
     titleContentColor: Color = LocalRef.current.text,
     textContentColor: Color = LocalRef.current.muted,

@@ -1,5 +1,9 @@
 package com.kallan.naistudio.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.saveable.rememberSaveable
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -109,6 +113,7 @@ fun GalleryScreen(
     selecting: Boolean,
     selectedIds: Set<String>,
     onToggleSelect: (String) -> Unit,
+    selectDisplayedImage: Boolean = false,
 ) {
     val language = state.settings.language
     val t: (String) -> String = { key -> RuntimeText.text(language, key) }
@@ -237,11 +242,11 @@ fun GalleryScreen(
                         item = cell.display,
                         thumbPx = listThumbPx,
                         selecting = selecting,
-                        selected = cell.base.id in selectedIds,
+                        selected = (if (selectDisplayedImage) cell.display.id else cell.base.id) in selectedIds,
                         upscaledBadge = cell.upscaled != null,
                         onClick = {
                             // 点开看放大后的那张（查看器仍可左右滑动浏览全部）
-                            if (selecting) onToggleSelect(cell.base.id) else viewing = cell.display
+                            if (selecting) onToggleSelect(if (selectDisplayedImage) cell.display.id else cell.base.id) else viewing = cell.display
                         },
                         onLongClick = { detail = cell.base },
                     )
@@ -260,10 +265,10 @@ fun GalleryScreen(
                         item = cell.display,
                         thumbPx = cellThumbPx,
                         selecting = selecting,
-                        selected = cell.base.id in selectedIds,
+                        selected = (if (selectDisplayedImage) cell.display.id else cell.base.id) in selectedIds,
                         upscaledBadge = cell.upscaled != null,
                         onClick = {
-                            if (selecting) onToggleSelect(cell.base.id) else viewing = cell.display
+                            if (selecting) onToggleSelect(if (selectDisplayedImage) cell.display.id else cell.base.id) else viewing = cell.display
                         },
                         onLongClick = { detail = cell.base },
                     )
@@ -318,6 +323,13 @@ fun GalleryScreen(
         )
     }
 
+    var pendingSingleExportId by rememberSaveable { mutableStateOf<String?>(null) }
+    val singleExportFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val id = pendingSingleExportId
+        pendingSingleExportId = null
+        if (uri != null && id != null) state.exportGalleryImages(setOf(id), uri)
+    }
+
     detail?.let { item ->
         ImageParamsDialog(
             item = item,
@@ -335,6 +347,11 @@ fun GalleryScreen(
                 state.useImageAsI2iBase(item.filePath, item.width, item.height)
                 detail = null
             },
+            onExport = {
+                pendingSingleExportId = item.id
+                singleExportFolder.launch(null)
+            },
+            exportEnabled = !state.galleryExportBusy,
             onOfficialUpscale = {
                 // 官方 2× 放大（付费）；结果作为新条目进图库，放大前那张原样保留
                 state.officialUpscale(item.filePath)

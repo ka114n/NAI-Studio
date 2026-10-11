@@ -179,11 +179,13 @@ private fun LlmApiCard(state: AppState, t: (String) -> String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     SectionCard(t("llm.title")) {
         // 收起时的摘要：有没有配好、翻译走的哪个后端
-        val configured = settings.llmApiUrl.isNotBlank() && settings.llmApiKey.isNotBlank()
-        val serviceName = if (settings.translateService == "baidu") {
-            t("llm.translateByBaidu")
-        } else {
-            t("llm.translateByLlm")
+        val configured = when (settings.translateService) {
+            "baidu" -> settings.baiduTranslateAppId.isNotBlank() && settings.baiduTranslateSecret.isNotBlank()
+            else -> settings.llmApiUrl.isNotBlank() && settings.llmApiKey.isNotBlank()
+        }
+        val serviceName = when (settings.translateService) {
+            "baidu" -> t("llm.translateByBaidu")
+            else -> t("llm.translateByLlm")
         }
         Row(
             Modifier
@@ -194,7 +196,8 @@ private fun LlmApiCard(state: AppState, t: (String) -> String) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (configured) "${settings.llmModel} · $serviceName" else t("llm.notConfiguredShort"),
+                if (!configured) "$serviceName · ${t("llm.notConfiguredShort")}"
+                else if (settings.translateService == "llm") "${settings.llmModel} · $serviceName" else serviceName,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (configured) {
                     com.kallan.naistudio.ui.LocalRef.current.text

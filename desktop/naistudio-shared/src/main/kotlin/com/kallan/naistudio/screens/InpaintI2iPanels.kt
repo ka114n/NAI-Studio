@@ -21,7 +21,7 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.kallan.naistudio.ui.RefSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -83,7 +83,7 @@ internal fun InpaintParamsTrigger(
  * 否则 Material 默认的 48dp 触控高度会把这 6 项撑到 400dp 以上。
  */
 @Composable
-internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier: Modifier = Modifier) {
+internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier: Modifier = Modifier, infinite: Boolean = false) {
     val settings = state.settings
     Surface(
         shape = RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp),
@@ -104,6 +104,12 @@ internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+            if (infinite) {
+                Text(t("infinite.paramsHint"), style = MaterialTheme.typography.bodySmall)
+            }
+            if (infinite) {
+                Text("${t("inpaint.strength")}: 1.00", style = MaterialTheme.typography.bodySmall)
+            } else {
             CompactSlider(
                 label = t("inpaint.strength"),
                 valueText = "%.2f".format(settings.inpaintStrength),
@@ -114,6 +120,7 @@ internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier
                     state.setSettings { it.copy(inpaintStrength = value.toDouble()) }
                 },
             )
+            }
             CompactSlider(
                 label = t("inpaint.noise"),
                 valueText = "%.2f".format(settings.inpaintNoise),
@@ -144,6 +151,7 @@ internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier
                     state.setSettings { it.copy(inpaintMaskFeather = value.roundToInt()) }
                 },
             )
+            if (!infinite) {
             // 聚焦重绘的「最小上下文」：只在遮罩层拖了聚焦框时才起作用（官方 Minimum Context Area）
             CompactSlider(
                 label = t("mask.focusContext"),
@@ -182,6 +190,7 @@ internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier
                     state.setSettings { it.copy(inpaintFocusFreeTierOnly = value) }
                 },
             )
+            }
             CompactSwitch(
                 label = t("inpaint.edgeProtection"),
                 hint = t("inpaint.edgeProtectionHint"),
@@ -192,7 +201,7 @@ internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier
             )
             CompactSwitch(
                 label = t("inpaint.addOriginalImage"),
-                hint = t("inpaint.addOriginalImageHint"),
+                hint = t(if (infinite) "infinite.localPasteHint" else "inpaint.addOriginalImageHint"),
                 checked = settings.inpaintAddOriginalImage,
                 onCheckedChange = { value ->
                     state.setSettings { it.copy(inpaintAddOriginalImage = value) }

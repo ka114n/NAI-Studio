@@ -116,19 +116,15 @@ class InfiniteCanvasGestureTest {
     }
 
     @Test
-    fun `在画布空白处拖一下 —— 新建一个框，尺寸就是拖出来的那一块`() {
+    fun `在画布空白处拖一下 —— 放置固定尺寸裁切框`() {
         val state = freshCanvas()
         sceneOf(state).drag(Offset(200f, 200f), Offset(420f, 380f))
         val frame = state.infiniteFrame
         assertNotNull("拖完应该有一个框 ✗（这一条正是用户报的「拖不动框」✓）", frame)
         assertTrue("框的宽高都得 > 0（宽=${frame!!.w} 高=${frame.h}）", frame.w > 0 && frame.h > 0)
-        // ⛔ 尺寸断言是**这条 bug 的护栏** ✗（2026-09-22）：
-        //    当时 `anchor` 每帧都被推进 ⇒ 框只长出"最后一帧的位移"（实测 38×31 ✓），
-        //    又被 `INFINITE_FRAME_MIN` 的护栏收掉 ⇒ 用户看到的是"什么都建不出来" ✓。
-        //    画布 512²、视口 800×600 ⇒ fit = 1.171875、内容层左边 100px ✓；
-        //    屏幕拖 (220, 180) ⇒ 文档应约 (188, 154) ✓。
-        assertEquals("框的宽应该等于拖出来的水平距离 ✗", 188, frame.w)
-        assertEquals("框的高应该等于拖出来的垂直距离 ✗", 154, frame.h)
+        assertEquals("拖动只改变位置，固定框宽度不变", 1024, frame.w)
+        assertEquals("拖动只改变位置，固定框高度不变", 1024, frame.h)
+
     }
 
     @Test
@@ -149,4 +145,18 @@ class InfiniteCanvasGestureTest {
         )
         assertEquals("按在框里拖**不该**把框的尺寸改成新画的那个 ✗", first.w, moved.w)
     }
+    @Test fun selectedPresetPersistsThroughFrameMovesAndIgnoresResizeRequests() {
+        val state = freshCanvas()
+        state.setInfiniteFrameSize(832, 1216, true)
+        val first = state.infiniteFrame!!
+        state.updateInfiniteFrame(first.copy(x = first.x + 100, w = 200, h = 300))
+        assertEquals(832, state.infiniteFrame!!.w)
+        assertEquals(1216, state.infiniteFrame!!.h)
+        val plan = state.infiniteFramePlan()!!.second
+        assertEquals(832, plan.cropW)
+        assertEquals(1216, plan.requestH)
+        state.setInfiniteFrameSize(4096, 4096, true)
+        assertEquals(832, state.infiniteFrame!!.w)
+    }
+
 }

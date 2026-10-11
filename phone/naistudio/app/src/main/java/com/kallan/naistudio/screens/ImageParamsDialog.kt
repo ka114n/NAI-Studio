@@ -60,6 +60,8 @@ fun ImageParamsDialog(
     onUseAsI2i: () -> Unit,
     /** 「使用官方放大放大图像」：对这张图跑一次 NovelAI 官方 2× 放大（付费）。 */
     onOfficialUpscale: () -> Unit,
+    onExport: (() -> Unit)? = null,
+    exportEnabled: Boolean = true,
     /**
      * 这张图是不是**画布编辑另存出来的**（用户 2026-09-26：「改变的图…可以重置修改」）。
      * 只有为 true 时才显示那颗「重置修改」—— 普通生成出来的图没有"原图"可退。
@@ -200,12 +202,16 @@ fun ImageParamsDialog(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    onExport?.let { export ->
+                        TextButton(onClick = export, enabled = exportEnabled) { Text("导出") }
+                        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    }
                     TextButton(onClick = onReuse) { Text(t("gallery.reuseParams")) }
                     TextButton(onClick = onRename) { Text(t("gallery.rename")) }
                 }
                 SelectionContainer {
                     Text(
-                        "存储位置（App 内原图）：\n${item.filePath}",
+                        "原图保存在应用内，可通过导出保存到系统文件夹",
                         style = MaterialTheme.typography.labelSmall,
                         color = com.kallan.naistudio.ui.LocalRef.current.muted,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),

@@ -144,6 +144,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
@@ -232,6 +233,7 @@ import com.kallan.naistudio.ui.canvasBackdrop
 import com.kallan.naistudio.ui.canvasBaseColor
 import com.kallan.naistudio.ui.contrastRatio
 import com.kallan.naistudio.ui.ReferenceCanvasColor
+import com.kallan.naistudio.ui.desktopImageDropTarget
 import com.kallan.naistudio.ui.FileImage
 import com.kallan.naistudio.ui.FullscreenImageViewer
 import com.kallan.naistudio.ui.LabeledSlider
@@ -529,6 +531,15 @@ private const val FLING_VELOCITY = 900f
  */
 @Composable
 fun GenerateScreen(
+    state: AppState,
+    onPanelActiveChange: (Boolean) -> Unit = {},
+    onContentGestureLockChange: (Boolean) -> Unit = {},
+) {
+    TagDragScope { GenerateScreenContent(state, onPanelActiveChange, onContentGestureLockChange) }
+}
+
+@Composable
+private fun GenerateScreenContent(
     state: AppState,
     /** 把「底部面板是否正在使用（打开或正在拉）」报给外壳，用来屏蔽侧边栏手势。 */
     onPanelActiveChange: (Boolean) -> Unit = {},
@@ -1776,6 +1787,7 @@ fun GenerateScreen(
                 val canvasAreaModifier = Modifier
                     .fillMaxSize()
                     .padding(canvasContentPadding)
+                    .desktopImageDropTarget(state.settings.language) { state.importDroppedImage(it) }
                 Box(Modifier.fillMaxSize()) {
                     // 参考风格的环境网格铺满侧栏以外的画布区域；各画布内容在默认透明底下
                     // 不重复绘制网格，自选画布色则使用不透明填充并保留自己的网格。
@@ -1798,7 +1810,7 @@ fun GenerateScreen(
                             // ⚠️ 走的是 [AppState.syncSharedCanvas] ✗ 不是"重建" ✓ ——
                             //    普通那一档已经把画布备好了 ✓，到这里就是**同一张** ✓（切档 = 只换 UI ✓）；
                             //    "工作图换了新的一张"才换画布内容 ✓（见那个函数的护栏 ✓）。
-                            LaunchedEffect(state.canvasMode) { state.syncSharedCanvas() }
+                            LaunchedEffect(state.canvasMode, state.workImagePath) { state.syncSharedCanvas() }
                             // **同一块画布底**（用户 2026-09-24：「统一画布背景…」✓）——
                             // 原来这一档**什么都不铺** ✗（露的是页面底色）⇒ 切档背景就变 ✓。
                             val infiniteCanvasColor = canvasBaseColor(state.settings.canvasColor)
@@ -3256,8 +3268,10 @@ private fun ActionButtonsRow(
     val dims = remember(path, state.maskVersion, imageIo) {
         path?.let { runCatching { MaskCodec.imageSize(imageIo, it) }.getOrNull() }
     }
+    val usesRtxUpscale = state.settings.upscaleProvider == "rtx"
     val price = dims?.let { OfficialUpscale.price(it.first, it.second) }
-    val upscaleEnabled = path != null && price != null && !state.busy
+    val supported = dims != null && if (usesRtxUpscale) dims.first.toLong() * dims.second <= 4_000_000 && state.rtxUpscaleAvailable else price != null
+    val upscaleEnabled = path != null && supported && !state.busy
 
     Row(
         Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp),
@@ -3988,9 +4002,9 @@ private fun PreviewCard(
     // ⚠️ 顺序：**流式那一张优先** ✓（正在生成时该看到的是流式帧 ✓，不是上一张画布 ✓）。
     // ⚠️ 只有**手上确实有工作图**时才拿画布当画面 ✗：不然"还没生成过"那一档会从
     //   "空态提示"变成"一张透明画布" ✓（无限画布那一档从空白起步是它自己的事 ✓）。
-    val sharedCanvas = if (path == null) null else state.infiniteCanvasImage()
-    // 有图就把画布备好（没图不建：普通档空着的时候没必要占几十 MB ✓，到无限档再建 ✓）
-    LaunchedEffect(path) { if (path != null) state.syncSharedCanvas() }
+    // Normal viewing loads detail asynchronously, independently of wheel zoom.
+    // Build the editing document only on entry to infinite mode; reuse edited pixels when present.
+    val sharedCanvas = if (path == null) null else state.normalCanvasImage()
 
     Box(
         modifier
@@ -4039,7 +4053,7 @@ private fun PreviewCard(
                 //（参考稿 `.canvas-pane { background-color: transparent }`，
                 //  让页面渐变透上来 ⇒ 画布区和四周是同一片背景）。
                 // 用户自选的画布颜色两套风格下都优先。
-                .canvasBackdrop(canvasColor, drawGrid = !referenceSkin || canvasColor != ReferenceCanvasColor),
+                .canvasBackdrop(canvasColor, drawGrid = false),
         )
 
         // ---- 图片 / 叠加 / 手势：只占"让开面板之后"的那块 ----
@@ -4083,9 +4097,8 @@ private fun PreviewCard(
                         modifier = Modifier.fillMaxSize(),
                     )
 
-                    path != null -> FileImage(
+                    path != null -> com.kallan.naistudio.ui.ProgressiveFileImage(
                         path,
-                        maxDimension = 1440,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -5093,6 +5106,23 @@ private fun PromptFields(
     var positiveFocused by remember { mutableStateOf(false) }
     val styleSelected = activeField == PromptField.STYLE
     val positiveSelected = activeField == PromptField.POSITIVE
+    var promptSidePositive by remember { mutableStateOf(true) }
+    val focusManager = LocalFocusManager.current
+    com.kallan.naistudio.ui.SegmentedCapsule(
+        options = listOf(
+            com.kallan.naistudio.models.NaiOption(label = t("generate.positivePrompt"), value = "positive"),
+            com.kallan.naistudio.models.NaiOption(label = t("generate.negativePrompt"), value = "negative"),
+        ),
+        selected = if (promptSidePositive) "positive" else "negative",
+        onSelect = { value ->
+            focusManager.clearFocus()
+            styleFocused = false; positiveFocused = false
+            promptSidePositive = value == "positive"
+            onFieldFocus(if (promptSidePositive) sharedField else PromptField.NEGATIVE)
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    if (promptSidePositive) {
     PromptBox(focused = styleFocused || positiveFocused) {
         PromptSectionHeader(
             label = t("generate.stylePrompt"),
@@ -5121,8 +5151,12 @@ private fun PromptFields(
         //    原来没有最小高度 ⇒ 空着时只有一行高（`bodyMedium` 约 20dp），写一两个词就顶到边。
         //    给一个**两行**的下限：`defaultMinSize(minHeight = 52.dp)` ≈ 两行正文 + 上下余量。
         //    ⚠️ 只设**下限**不设上限：写长了一样"写多少行就长多高"（原口径没变）。
-        Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = 52.dp)) {
-            PromptTextField(
+        Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = if (state.settings.positiveTagCardMode) 0.dp else 52.dp)) {
+            if (state.settings.positiveTagCardMode) {
+                BilingualTagEditor(state, params.stylePrompt, lockStyle,
+                    onActivate = { onFieldFocus(PromptField.STYLE); styleFocused = false; sharedField = PromptField.STYLE },
+                    onValueChange = { text -> state.setParam { it.copy(stylePrompt = text) } }, fieldKey = "style")
+            } else PromptTextField(
                 value = params.stylePrompt,
                 onValueChange = { value -> state.setParam { it.copy(stylePrompt = value) } },
                 readOnly = lockStyle,
@@ -5143,22 +5177,29 @@ private fun PromptFields(
             onToggleLock = { state.setPromptLock(PromptField.POSITIVE, !lockPositive) },
             t = t,
             selected = positiveSelected,
+            trailing = { TagModeButton(state) { onFieldFocus(PromptField.POSITIVE); positiveFocused = false; sharedField = PromptField.POSITIVE } },
         )
         // 原来这里还挂着那排小图标（角色图鉴 / 垃圾桶 / 撤销 / 时钟 / 翻译 / 优化），
         // 已经改成**每个文本框自己下面那一条**（[PromptActionBar]，用户 2026-09-19）。
         // 生成期间**允许继续编辑**（用户要求 2026-09-15）：在飞的请求用的是发起时的参数快照，
         // 不受影响；生成中再点主按钮 = 排队，排队按点击那一刻的 params 快照，所以
         // 「生成中改词 → 再点生成」用的就是改后的提示词。
-        Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = 96.dp)) {
-            PromptTextField(
-                value = params.positivePrompt,
-                onValueChange = { text -> state.setParam { it.copy(positivePrompt = text) } },
-                readOnly = lockPositive,
-                placeholder = "1girl, solo, blue hair, white dress, garden, sunlight, smile",
-                onFocusChange = focusHandler(PromptField.POSITIVE) { positiveFocused = it },
-                highlight = true,
-                state = state,
-            )
+        Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = if (state.settings.positiveTagCardMode) 0.dp else 96.dp)) {
+            if (state.settings.positiveTagCardMode) {
+                BilingualTagEditor(state, params.positivePrompt, lockPositive,
+                    onActivate = { onFieldFocus(PromptField.POSITIVE); positiveFocused = false; sharedField = PromptField.POSITIVE },
+                    onValueChange = { text -> state.setParam { it.copy(positivePrompt = text) } })
+            } else {
+                PromptTextField(
+                    value = params.positivePrompt,
+                    onValueChange = { text -> state.setParam { it.copy(positivePrompt = text) } },
+                    readOnly = lockPositive,
+                    placeholder = "1girl, solo, blue hair, white dress, garden, sunlight, smile",
+                    onFocusChange = focusHandler(PromptField.POSITIVE) { positiveFocused = it },
+                    highlight = true,
+                    state = state,
+                )
+            }
         }
         // **风格 + 正面共用这一条**：它跟着光标在那两段之间走（见 `sharedField`）。
         PromptActionBar(state = state, t = t, targetField = sharedField)
@@ -5178,7 +5219,8 @@ private fun PromptFields(
         }
     }
 
-    // ---- 负面提示词：自己一个框 ----
+    } else {
+    // Negative replaces the same prompt area; the three parameter fields stay independent.
     var negativeFocused by remember { mutableStateOf(false) }
     PromptBox(focused = negativeFocused, modifier = Modifier.padding(top = 8.dp)) {
         PromptSectionHeader(
@@ -5202,28 +5244,13 @@ private fun PromptFields(
         // 负面提示词自己那条工具栏
         PromptActionBar(state = state, t = t, targetField = PromptField.NEGATIVE)
     }
-    if (state.canvasMode != 2) {
+    }
+    if (promptSidePositive && state.canvasMode != 2) {
         Row(
             Modifier.fillMaxWidth().padding(top = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PromptOptionCard(
-                label = t("anima.title"),
-                icon = PromptOptionIcon.People,
-                selected = false,
-                // 从新版角色图鉴选中名字时直接创建角色分区。
-                onClick = { state.openAnimaSheetForCharacters() },
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    state.extras.activeItems.size.toString(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.background(MaterialTheme.colorScheme.primary, CircleShape)
-                        .padding(horizontal = 7.dp, vertical = 2.dp),
-                )
-            }
             if (params.isV5) {
                 PromptOptionCard(
                     label = t("generate.transparent"),
@@ -5232,16 +5259,11 @@ private fun PromptFields(
                     onClick = { state.setParam { it.copy(transparentBackground = !it.transparentBackground) } },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Box(
-                        Modifier.size(width = 36.dp, height = 20.dp)
-                            .background(if (params.transparentBackground) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                            .border(1.dp, if (params.transparentBackground) MaterialTheme.colorScheme.primary else NaiSkinTokens.borderStrong(), CircleShape),
-                    ) {
-                        Box(
-                            Modifier.offset(x = if (params.transparentBackground) 17.dp else 3.dp, y = 3.dp)
-                                .size(14.dp).background(if (params.transparentBackground) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, CircleShape),
-                        )
-                    }
+                    com.kallan.naistudio.ui.RefSwitch(
+                        checked = params.transparentBackground,
+                        onCheckedChange = null,
+                        modifier = Modifier.size(36.dp, 20.dp),
+                    )
                 }
             } else {
                 Spacer(Modifier.weight(1f))
@@ -5423,6 +5445,7 @@ internal fun PromptActionBar(
     modifier: Modifier = Modifier,
 ) {
     val field = PromptField.stackKey(targetField)
+    TagTrashToolbar(state, field) {
     Row(
         // 这一条现在长在**每个文本框自己下面**（见上面 KDoc），所以不再自己上色：
         // 提示词栏 / 角色卡片各自的底色就是它的底色，只留一点上下留白。
@@ -5484,6 +5507,7 @@ internal fun PromptActionBar(
                 Icon(SparkleIcon, contentDescription = t("llm.optimize"), modifier = Modifier.size(19.dp))
             }
         }
+    }
     }
 }
 
@@ -7071,19 +7095,6 @@ private fun DockedPanelTabs(
     }
     val focusManager = LocalFocusManager.current
     Column(modifier) {
-        PanelTabStrip(
-            selectedTab = selected,
-            onSelectTab = { tab ->
-                if (tab != selected) {
-                    focusManager.clearFocus()
-                    onSelectTab(tab)
-                }
-            },
-            t = t,
-            hiddenTabs = state.detachedPanels,
-            comicStoryboard = state.canvasMode == 2,
-            showParamsButton = false,
-        )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val paramsShown = shown == TAB_PARAMS
             DockedTabPage(visible = !paramsShown, scroll = promptScroll, contentPadding = contentPadding, spacing = spacing) {

@@ -125,6 +125,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -147,6 +148,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -264,6 +266,16 @@ private const val FLING_VELOCITY = 900f
 @OptIn(ExperimentalMaterial3Api::class)
 fun GenerateScreen(
     state: AppState,
+    onPanelActiveChange: (Boolean) -> Unit = {},
+    onContentGestureLockChange: (Boolean) -> Unit = {},
+) {
+    TagDragScope { GenerateScreenContent(state, onPanelActiveChange, onContentGestureLockChange) }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun GenerateScreenContent(
+    state: AppState,
     /** 把「底部面板是否正在使用（打开或正在拉）」报给外壳，用来屏蔽侧边栏手势。 */
     onPanelActiveChange: (Boolean) -> Unit = {},
     /** 遮罩模式开着时把翻页手势也锁掉，否则在图上涂画会被「文生图 ↔ 图库」的滑动抢走。 */
@@ -366,6 +378,8 @@ fun GenerateScreen(
     val language = state.settings.language
     val t: (String) -> String = { key -> RuntimeText.text(language, key) }
 
+    val generationFocus = LocalFocusManager.current
+    val generationKeyboard = LocalSoftwareKeyboardController.current
     val configuration = LocalConfiguration.current
     val widthDp = configuration.screenWidthDp.dp
     val heightDp = configuration.screenHeightDp.dp
@@ -692,7 +706,15 @@ fun GenerateScreen(
         panelDragging = false
         panelTarget = 1f
     }
+    LaunchedEffect(panelTarget, split) {
+        if (!split && panelTarget == 0f) {
+            generationFocus.clearFocus(force = true)
+            generationKeyboard?.hide()
+        }
+    }
     val togglePanel: () -> Unit = {
+        generationFocus.clearFocus(force = true)
+        generationKeyboard?.hide()
         panelDragging = false
         // 打开时**不改** panelTab：按上一次关闭时的栏目恢复（用户要求）
         // ⚠️ 例外：**参数模式下收起来**要把栏目记忆退回「提示词」（用户 2026-09-25 把参数从
@@ -1124,8 +1146,7 @@ fun GenerateScreen(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(bottom = floatLift)
-                        // 网页 `.cpanel`：margin 0 10、glass、描边、顶部 20 圆角、向上的柔和阴影
-                        .padding(horizontal = 10.dp)
+                        // Fill the phone width; only the inner controls keep their content padding.
                         .shadow(
                             10.dp,
                             cpanelShape,
@@ -1436,8 +1457,10 @@ private fun ActionButtonsRow(
     val dims = remember(path, state.maskVersion) {
         path?.let { runCatching { MaskCodec.imageSize(it) }.getOrNull() }
     }
+    val usesRtxUpscale = state.settings.upscaleProvider == "rtx"
     val price = dims?.let { OfficialUpscale.price(it.first, it.second) }
-    val upscaleEnabled = path != null && price != null && !state.busy
+    val supported = dims != null && if (usesRtxUpscale) dims.first.toLong() * dims.second <= 4_000_000 && state.reverseRemoteAddress.isNotBlank() && state.reverseRemoteCode.isNotBlank() else price != null
+    val upscaleEnabled = path != null && supported && !state.busy
 
     // ⚠️ 用户 2026-09-26：「深色模式下 2x 放大 / 导演台 按钮**没有颜色，加上**」，
     // 紧接着又说「**浅色模式还是没有底色**」——所以**两种模式都上底** ✓：
@@ -1779,8 +1802,8 @@ private fun PreviewCard(state: AppState, t: (String) -> String, modifier: Modifi
     // ---- 预览缩放 ----
     // 刻意不用 rememberSaveable：换图、进遮罩、重新生成都回到 1 倍，
     // 免得隔天打开发现图还放大在某处、还找不到原因。
-    var previewScale by remember { mutableFloatStateOf(1f) }
-    var previewOffset by remember { mutableStateOf(Offset.Zero) }
+    var previewScale by remember(path) { mutableFloatStateOf(1f) }
+    var previewOffset by remember(path) { mutableStateOf(Offset.Zero) }
     // 双击归位的那段动画。**手指一碰就得把它掐掉**，否则动画和捏合会互相拽
     // （两边都在写同一个 state），所以拿一个 Job 记着，随时 cancel。
     val previewScope = rememberCoroutineScope()
@@ -1794,40 +1817,20 @@ private fun PreviewCard(state: AppState, t: (String) -> String, modifier: Modifi
         previewOffset = Offset.Zero
     }
 
+    val previewDimension by remember(path, sourceWidth, sourceHeight) {
+        derivedStateOf {
+            com.kallan.naistudio.models.PreviewResolution.dimension(
+                sourceWidth, sourceHeight, areaState.value.width, areaState.value.height, previewScale,
+            )
+        }
+    }
+
     Box(modifier.onSizeChanged { areaState.value = it }, contentAlignment = Alignment.Center) {
         // 有没有图：没有就没什么可缩放的，也不接手势
         val hasImage = preview != null || path != null
 
         // 方格底：铺在图片**背后**。图片位置是固定的，方格只是个"画布"的视觉底
         // （用户要求保留；空态不铺，免得像出错了）。
-        if (hasImage) {
-            val gridColor = MaterialTheme.colorScheme.onSurface.copy(alpha = PREVIEW_GRID_ALPHA)
-            Canvas(Modifier.fillMaxSize()) {
-                val cell = PREVIEW_GRID_CELL.toPx()
-                if (cell <= 0f) return@Canvas
-                var row = 0
-                var y = 0f
-                while (y < size.height) {
-                    var col = 0
-                    var x = 0f
-                    while (x < size.width) {
-                        // 只画"深色格"，另一半留白 —— 画一半就够出棋盘格了
-                        if ((row + col) % 2 == 0) {
-                            drawRect(
-                                color = gridColor,
-                                topLeft = Offset(x, y),
-                                size = Size(cell, cell),
-                            )
-                        }
-                        x += cell
-                        col++
-                    }
-                    y += cell
-                    row++
-                }
-            }
-        }
-
         // 图片层：缩放在这里（`graphicsLayer` 的缩放原点是图层中心，和上面的锚点算法对得上）。
         // 没有方格底、没有平移 —— 图片就待在它一直待的位置（用户否掉了画布模式）。
         if (hasImage) {
@@ -1851,7 +1854,7 @@ private fun PreviewCard(state: AppState, t: (String) -> String, modifier: Modifi
 
                     path != null -> FileImage(
                         path,
-                        maxDimension = 1440,
+                        maxDimension = previewDimension,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -2484,8 +2487,12 @@ private fun PromptFields(
                 },
             )
             // 高度不设上限（写多少行就长多高）；下限 = 网页 `.ptext.style` 的 44
-            Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp)) {
-                PromptTextField(
+            Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = if (state.settings.positiveTagCardMode) 0.dp else 44.dp)) {
+                if (state.settings.positiveTagCardMode) {
+                    BilingualTagEditor(state, params.stylePrompt, lockStyle,
+                        onActivate = { onFieldFocus(PromptField.STYLE); styleFocused = false },
+                        onValueChange = { text -> state.setParam { it.copy(stylePrompt = text) } }, fieldKey = "style")
+                } else PromptTextField(
                     value = params.stylePrompt,
                     onValueChange = { value -> state.setParam { it.copy(stylePrompt = value) } },
                     readOnly = lockStyle,
@@ -2502,21 +2509,28 @@ private fun PromptFields(
                 onToggleLock = { state.setPromptLock(PromptField.POSITIVE, !lockPositive) },
                 t = t,
                 selected = positiveSelected,
+                trailing = { TagModeButton(state) { onFieldFocus(PromptField.POSITIVE); positiveFocused = false } },
             )
             // 生成期间**允许继续编辑**（用户要求 2026-09-15）：在飞的请求用的是发起时的参数快照。
-            Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = 88.dp)) {
-                PromptTextField(
-                    value = params.positivePrompt,
-                    onValueChange = { text ->
-                        state.setParam { it.copy(positivePrompt = text) }
-                    },
-                    readOnly = lockPositive,
-                    placeholder = "1girl, solo, blue hair, white dress, garden, sunlight, smile",
-                    onFocusChange = focusHandler(PromptField.POSITIVE) { positiveFocused = it },
-                    highlight = true,
-                    // 词典候选**只给这一框开** ✓
-                    state = state,
-                )
+            Box(Modifier.fillMaxWidth().defaultMinSize(minHeight = if (state.settings.positiveTagCardMode) 0.dp else 88.dp)) {
+                if (state.settings.positiveTagCardMode) {
+                    BilingualTagEditor(state, params.positivePrompt, lockPositive,
+                        onActivate = { onFieldFocus(PromptField.POSITIVE); positiveFocused = false },
+                        onValueChange = { text -> state.setParam { it.copy(positivePrompt = text) } })
+                } else {
+                    PromptTextField(
+                        value = params.positivePrompt,
+                        onValueChange = { text ->
+                            state.setParam { it.copy(positivePrompt = text) }
+                        },
+                        readOnly = lockPositive,
+                        placeholder = "1girl, solo, blue hair, white dress, garden, sunlight, smile",
+                        onFocusChange = focusHandler(PromptField.POSITIVE) { positiveFocused = it },
+                        highlight = true,
+                        // 词典候选**只给这一框开** ✓
+                        state = state,
+                    )
+                }
             }
         }
         // 普通画布的角色分区入口在提示词下方；漫画画布直接编辑分镜。
@@ -2610,17 +2624,11 @@ private fun PromptFields(
         ) {
             RefSheetTitle(title = t("char.title"), onClose = { characterDrawerOpen = false })
             Column(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 28.dp),
+                Modifier.fillMaxWidth().weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AnimaButton(t = t, onClick = { state.openAnimaSheetForCharacters() })
-                    RefHint(t("anima.charHint"))
-                }
                 CharacterEditorPanel(state, Modifier.fillMaxWidth())
             }
         }
@@ -2759,12 +2767,13 @@ private fun PlotEditorPanel(
  * 这行字**贴在垃圾桶旁边**而不是单独占一行横幅（用户要求：横幅删掉，太占高度）。
  */
 @Composable
-private fun PromptActionBar(
+internal fun PromptActionBar(
     state: AppState,
     t: (String) -> String,
     targetField: String,
     onOpenHistory: () -> Unit,
     modifier: Modifier = Modifier,
+    explicitTarget: Boolean = false,
 ) {
     // ⚠️ 这里必须用 `stackKey` 而不是 `orDefault`：后者把剧情（PLOT）折成正面提示词 ✗ ——
     // 表现就是"标签写着作用于剧情，按下去改的却是提示词"（用户 2026-09-18 报的正是这个）。
@@ -2788,6 +2797,7 @@ private fun PromptActionBar(
         else -> t(promptFieldNameKey(field))
     }
     val pabBorder = LocalRef.current.border
+    TagTrashToolbar(state, field) {
     Row(
         // 常驻按钮栏也走顶栏那一档底色（用户 2026-09-16 要求"工具条和顶部一样"）：
         // 它收起态就贴在 2x放大那行上面，两块颜色必须接得上。
@@ -2803,7 +2813,7 @@ private fun PromptActionBar(
         // 垃圾桶：清**当前聚焦的那个文本框**（提示词那次清三条，角色/漫画各清各的）。
         // 锁着的提示词清不掉 —— 由 `AppState.params` 的写入口统一兜底。
         IconButton(
-            onClick = { state.clearFocusedTextField() },
+            onClick = { if (explicitTarget) state.clearOnePrompt(field) else state.clearFocusedTextField() },
             modifier = Modifier.size(34.dp),
         ) {
             Icon(
@@ -2813,7 +2823,7 @@ private fun PromptActionBar(
             )
         }
         // 「作用于 X」紧挨着垃圾桶（用户要求放这儿，删掉原来那条单独一行的横幅）
-        Text(
+        if (!explicitTarget) Text(
             "${t("prompt.targetPrefix")}$targetLabel",
             fontSize = 12.sp,
             color = LocalRef.current.faint,
@@ -2866,6 +2876,7 @@ private fun PromptActionBar(
                 Icon(SparkleIcon, contentDescription = t("llm.optimize"), modifier = Modifier.size(17.dp))
             }
         }
+    }
     }
 }
 
@@ -3002,15 +3013,17 @@ private fun PromptTextField(
      *
      * 锁着的时候点框只是为了**选中 / 复制 / 滚动**（见本函数的说明），焦点其实已经落在框里；
      * 一旦 `readOnly` 翻成 `false`，`BasicTextField` 会认为"现在可以编辑了"⇒ **输入法自己起来** ✗。
-     * 这里在解锁那一下立刻把它收回去 —— 焦点与光标位置**都不动**，
-     * 想编辑再点一下框即可（那一下才是用户真的要打字）。
+     * 解锁时清除旧的只读焦点并隐藏键盘；再次点击文本框出现编辑光标时，才允许输入法弹出。
      *
-     * ⚠️ 用 `keyboard.hide()` 而不是 `focusManager.clearFocus()`：桌面端没有软键盘，
-     *    `hide()` 是空操作 ⇒ 电脑上解锁**不会**把光标弄丢 ✓。
+     * 手机输入焦点以可编辑文本框为准，按钮、拖动预览和隐藏的抽屉不保留输入会话。
      */
     val keyboard = LocalSoftwareKeyboardController.current
+    val fieldFocus = LocalFocusManager.current
     LaunchedEffect(readOnly) {
-        if (!readOnly && focused) keyboard?.hide()
+        if (!readOnly && focused) {
+            fieldFocus.clearFocus(force = true)
+            keyboard?.hide()
+        }
     }
 
     // Keep the selection and IME composition locally; app state still stores plain text.
@@ -3102,7 +3115,7 @@ private fun TranslateGlyph(label: String) {
 /** 「历史提示词」抽屉：图库历史里出现过的正面提示词，点一条填进正面提示词框。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PromptHistorySheet(
+internal fun PromptHistorySheet(
     state: AppState,
     t: (String) -> String,
     field: String,

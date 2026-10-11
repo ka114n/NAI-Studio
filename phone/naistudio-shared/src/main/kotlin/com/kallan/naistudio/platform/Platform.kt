@@ -83,6 +83,8 @@ interface DeviceInfo {
  * （下一步要加的图片编解码、文件选择器都往这儿挂）。
  */
 interface Platform {
+    /** Open the packaged read-only tag store, after background extraction. */
+    fun openTagLexicon(file: File): com.kallan.naistudio.models.SqlTagLexicon? = null
     val kv: KeyValueStore
     val secrets: SecretStore
     val paths: AppPaths

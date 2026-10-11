@@ -153,6 +153,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -163,6 +164,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
@@ -466,6 +468,33 @@ fun StudioShell(state: AppState, appName: String) {
     ApplicationUpdateHost(updaterPlatform.appVersion, "Windows", java.io.File(updaterPlatform.paths.filesDir, "updates"), updaterPlatform::installApplicationUpdate, state.settings.language)
     val language = state.settings.language
     val t: (String) -> String = { key -> RuntimeText.text(language, key) }
+    if (state.tagDictionaryDownloadPrompt) {
+        AlertDialog(
+            onDismissRequest = { if (!state.tagDictionaryDownloading) state.dismissTagDictionaryDownload() },
+            title = { Text(t("dictionary.downloadTitle")) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(t("dictionary.downloadHint"))
+                    if (state.tagDictionaryDownloading) {
+                        Text("${t("dictionary.downloading")} ${state.tagDictionaryDownloadProgress}%")
+                        LinearProgressIndicator(progress = { state.tagDictionaryDownloadProgress / 100f }, modifier = Modifier.fillMaxWidth())
+                    } else if (state.tagDictionaryError) {
+                        Text(t("dictionary.downloadFailed"), color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { state.downloadTagDictionary() }, enabled = !state.tagDictionaryDownloading) {
+                    Text(t(if (state.tagDictionaryError) "common.retry" else "dictionary.download"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { state.dismissTagDictionaryDownload() }, enabled = !state.tagDictionaryDownloading) {
+                    Text(t("dictionary.downloadLater"))
+                }
+            },
+        )
+    }
 
     var drawerOpen by rememberSaveable { mutableStateOf(false) }
     var galleryControls by rememberSaveable { mutableStateOf(false) }
@@ -641,7 +670,9 @@ fun StudioShell(state: AppState, appName: String) {
         }
     }
 
-    val goToPage: (Int, Int) -> Unit = { page, direction ->
+    val goToPage: (Int, Int) -> Unit = { requestedPage, direction ->
+        // The old tools-page shortcut now opens the canvas with its dedicated right tool pane.
+        val page = if (requestedPage == TOOLS_INDEX) 0 else requestedPage
         index = page
         if (page != pagerState.currentPage) {
             navJob?.cancel()
@@ -784,6 +815,20 @@ fun StudioShell(state: AppState, appName: String) {
     // 状态放里面的话一收纳就被丢掉（回来时工具名单是收着的）；放这一层还能跟 `rememberSaveable`
     // 一起存下来。收纳态那颗 logo 展开后就能直接看到原来展开的工具分组。
     var toolsExpanded by rememberSaveable { mutableStateOf(false) }
+    val toolPaneWidth = remember { mutableFloatStateOf(platform.kv.getInt("tools.dock.width", 360).toFloat()) }
+    val visibleSidebarWidth = if (!permanentSidebar) 0.dp else if (sidebarCollapsed) CollapsedSidebarWidth else sidebarWidthDp.dp
+    val maxToolPaneWidth = (windowSize.width - visibleSidebarWidth - 600.dp).value.coerceIn(240f, 520f)
+    var toolsCollapsed by rememberSaveable { mutableStateOf(platform.kv.getBoolean("tools.dock.collapsed", false)) }
+    val toggleToolsCollapsed: () -> Unit = {
+        toolsCollapsed = !toolsCollapsed
+        platform.kv.edit().putBoolean("tools.dock.collapsed", toolsCollapsed).apply()
+    }
+    // Width is read during layout, not while composing the shell and all of its pages.
+    val readToolsWidth: () -> Dp = {
+        if (toolsCollapsed) DesktopToolsRailWidth else toolPaneWidth.floatValue.coerceIn(240f, maxToolPaneWidth).dp
+    }
+    val toolsVisible = pagerState.currentPage == 0
+
 
     // ---- 窗口标题栏（**全宽**）----
     // 用户 2026-09-19：「**侧边栏也放在标题栏下面**」—— 原来标题栏只盖住"内容区"那一块，
@@ -943,6 +988,7 @@ fun StudioShell(state: AppState, appName: String) {
                     }
 
                     tabs.forEachIndexed { tabIndex, (label, icon) ->
+                        if (tabIndex == TOOLS_INDEX) return@forEachIndexed
                         val isToolsGroup = tabIndex == TOOLS_INDEX
                         StudioNavigationItem(
                             label = label,
@@ -1106,17 +1152,17 @@ fun StudioShell(state: AppState, appName: String) {
         when {
             // 画布编辑器开着 → 返回键 = 退出编辑器（**丢弃这次编辑**，和左上角那个叉一致；
             // 想留下改动用顶栏的「完成」）。放在最前面：它盖在所有东西上面。
-            state.canvasEditorOpen -> uiHost.backHandler { state.closeCanvasEditor(commit = false) }
-            drawerOpen -> uiHost.backHandler { drawerOpen = false }
-            index == 0 && state.plotEditorOpen -> uiHost.backHandler { state.closePlotEditor() }
-            index == 0 && state.maskMode && state.canvasMode != 2 -> uiHost.backHandler { state.toggleMaskMode() }
-            index == 0 && bottomPanelActive -> uiHost.backHandler { state.requestPanelCollapse() }
-            index == GALLERY_INDEX && selecting -> uiHost.backHandler {
+            state.canvasEditorOpen -> uiHost.backHandler(enabled = true) { state.closeCanvasEditor(commit = false) }
+            drawerOpen -> uiHost.backHandler(enabled = true) { drawerOpen = false }
+            index == 0 && state.plotEditorOpen -> uiHost.backHandler(enabled = true) { state.closePlotEditor() }
+            index == 0 && state.maskMode && state.canvasMode != 2 -> uiHost.backHandler(enabled = true) { state.toggleMaskMode() }
+            index == 0 && bottomPanelActive -> uiHost.backHandler(enabled = true) { state.requestPanelCollapse() }
+            index == GALLERY_INDEX && selecting -> uiHost.backHandler(enabled = true) {
                 selecting = false
                 selectedIds = emptySet()
             }
-            index != 0 -> uiHost.backHandler { backToGenerate() }
-            else -> uiHost.backHandler {
+            index != 0 -> uiHost.backHandler(enabled = true) { backToGenerate() }
+            else -> uiHost.backHandler(enabled = true) {
                 // ⚠️ 用户 2026-09-26：「**Esc 键不要拿来当退出键，Esc 不能退出程序**」——
                 // 电脑端（`permanentSidebar`）**取消"再按一次退出"** ✗：那边 Esc 就是返回键，
                 // 一路退到第 7 条时按 Esc 只会把窗口关掉，属于"手滑就没了" ✗。
@@ -1357,6 +1403,11 @@ fun StudioShell(state: AppState, appName: String) {
                     beyondViewportPageCount = if (neighborPrewarmReady || pagerInUse) 1 else 0,
                     modifier = Modifier
                         .fillMaxSize()
+                        .layout { measurable, constraints ->
+                            val reserved = if (toolsVisible) readToolsWidth().roundToPx() else 0
+                            val child = measurable.measure(constraints.offset(horizontal = -reserved))
+                            layout(child.width + reserved, child.height) { child.placeRelative(0, 0) }
+                        }
                         .nestedScroll(swipeGate)
                         .then(
                             if (animating) {
@@ -1370,11 +1421,13 @@ fun StudioShell(state: AppState, appName: String) {
                         ),
                 ) { page ->
                     when (page) {
-                        0 -> GenerateScreen(
-                            state = state,
-                            onPanelActiveChange = { bottomPanelActive = it },
-                            onContentGestureLockChange = { contentGestureLocked = it },
-                        )
+                        0 -> ProvideWindowSize {
+                            GenerateScreen(
+                                state = state,
+                                onPanelActiveChange = { bottomPanelActive = it },
+                                onContentGestureLockChange = { contentGestureLocked = it },
+                            )
+                        }
 
                         GALLERY_INDEX -> GalleryScreen(
                             state = state,
@@ -1433,6 +1486,7 @@ fun StudioShell(state: AppState, appName: String) {
                     Box(
                         Modifier
                             .align(Alignment.TopEnd)
+                            .offset { IntOffset(if (toolsVisible) -readToolsWidth().roundToPx() else 0, 0) }
                             .padding(
                                 end = if (referenceSkin) 14.dp else 10.dp,
                                 top = if (referenceSkin) 14.dp else 8.dp,
@@ -1440,6 +1494,24 @@ fun StudioShell(state: AppState, appName: String) {
                     ) {
                         AccountChip(state, t)
                     }
+                }
+                if (toolsVisible) {
+                    DesktopToolsPane(
+                        state = state,
+                        t = t,
+                        widthState = toolPaneWidth,
+                        maxWidth = maxToolPaneWidth,
+                        collapsed = toolsCollapsed,
+                        onToggleCollapsed = toggleToolsCollapsed,
+                        onResizeEnd = {
+                            platform.kv.edit().putInt("tools.dock.width", toolPaneWidth.floatValue.toInt()).apply()
+                        },
+                        modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().layout { measurable, constraints ->
+                            val width = readToolsWidth().roundToPx().coerceAtMost(constraints.maxWidth)
+                            val child = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+                            layout(width, child.height) { child.placeRelative(0, 0) }
+                        },
+                    )
                 }
             }
         }
@@ -1454,13 +1526,7 @@ fun StudioShell(state: AppState, appName: String) {
     // 左边同理让出侧栏（`sidebarWidth`）。
     // ⚠️ 用户 2026-09-20：「**只在画布显示**」—— 工具窗口只在第 0 页（生图页）渲染；
     // 切到别的页面整层收起（位置仍记在盘上，回画布照旧摆出来；"哪几个开着"也照旧）。
-    if (pagerState.currentPage == 0) {
-        ToolWindowLayer(
-            state = state,
-            t = t,
-            sidebarWidth = if (permanentSidebar) sidebarWidthDp.dp else 0.dp,
-        )
-    }
+    // Desktop tools now occupy the right dock; legacy floating windows are no longer rendered.
 
     WindowMenuBar(
         state = state,
@@ -1594,6 +1660,7 @@ private fun CollapsedSidebar(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             tabs.forEachIndexed { tabIndex, (label, icon) ->
+                if (tabIndex == TOOLS_INDEX) return@forEachIndexed
                 CollapsedNavItem(
                     label = label,
                     selected = currentPage == tabIndex,
@@ -3711,7 +3778,8 @@ private fun ToolWindowLayer(
                         }
                     }
                     .clip(RoundedCornerShape(14.dp))
-                    .background(LocalPanelBackgroundColor.current ?: MaterialTheme.colorScheme.surface),
+                    .background(NaiSkinTokens.sidebar())
+                    .border(1.dp, NaiSkinTokens.border(), RoundedCornerShape(14.dp)),
             ) {
                 Column(Modifier.fillMaxSize()) {
                     ToolWindowTitleBar(
@@ -3765,7 +3833,9 @@ private fun ToolWindowLayer(
                     )
                     // 内容就是那个工具本身的界面：和整页**共用同一份** `ToolContent`，不抄第二份
                     Box(Modifier.weight(1f).fillMaxWidth()) {
-                        ToolContent(toolId = toolId, state = state)
+                        CompositionLocalProvider(LocalContentColor provides NaiSkinTokens.text()) {
+                            ToolContent(toolId = toolId, state = state)
+                        }
                     }
                 }
                 // 右下角：拉大拉小（用户 2026-09-20：「工具窗口不能调大小」）——
@@ -3866,13 +3936,8 @@ private fun ToolWindowTitleBar(
     // 万一以后这扇窗口换了调用方（比如按 id 复用同一个组合位置），拖的还是当前那扇
     val drag by rememberUpdatedState(onDrag)
     val dragEnd by rememberUpdatedState(onDragEnd)
-    // ⚠️ 用户 2026-09-26 第二轮：「去除深色标题栏」+「设置里加标题栏颜色」——
-    // 同生成页那两块面板：没设置就跟随面板底色（= 没有独立标题栏 ✓），设置了就按亮度取黑/白字 ✓。
-    val toolTitleBarColor = LocalPanelTitleBarColor.current
-    val toolBarColor = toolTitleBarColor ?: MaterialTheme.colorScheme.surface
-    val toolBarContent = toolTitleBarColor?.let {
-        if (it.luminance() < 0.5f) Color.White else Color.Black
-    } ?: MaterialTheme.colorScheme.onSurfaceVariant
+    val toolBarColor = Color.Transparent
+    val toolBarContent = NaiSkinTokens.text()
     Row(
         Modifier
             .fillMaxWidth()

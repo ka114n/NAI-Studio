@@ -319,6 +319,7 @@ object FocusedInpaint {
         sourceHeight: Int,
         generated: IntArray,
         plan: Plan,
+        onlyBlankPixels: Boolean = false,
     ): EditRect? {
         val frame = plan.frameInCrop
         val cropW = plan.cropW
@@ -337,6 +338,7 @@ object FocusedInpaint {
                 if (cropX < 0 || cropX >= cropW) continue
                 val canvasX = plan.cropX + cropX
                 if (canvasX < 0 || canvasX >= sourceWidth) continue
+                if (onlyBlankPixels && (canvas[canvasRow + canvasX] ushr 24) != 0) continue
                 canvas[canvasRow + canvasX] = generated[sourceRow + cropX]
                 touched++
             }

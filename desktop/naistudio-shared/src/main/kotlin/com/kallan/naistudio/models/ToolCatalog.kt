@@ -45,6 +45,7 @@ data class ToolEntry(
 
 object ToolCatalog {
 
+    const val DICTIONARY = "dictionary"
     const val REVERSE = "reverse"
     const val METADATA = "metadata"
     const val ANIMADEX = "animadex"
@@ -62,6 +63,7 @@ object ToolCatalog {
      * 以后加工具（比如「超分」「标签翻译」）就往这里加一条，两处界面自动跟着变。
      */
     val entries: List<ToolEntry> = listOf(
+        ToolEntry(DICTIONARY, "dictionary.title", "dictionary.hint", ToolSurface.TOOLS),
         ToolEntry(
             id = ANIMADEX,
             titleKey = "anima.title",

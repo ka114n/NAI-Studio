@@ -48,8 +48,12 @@ sourceSets["main"].kotlin.srcDir(sharedSrc)
  * —— 词典整个不生效、而且**一个错都不报** ✗（正是最难查的那类 ✓）。手机线那边同样加了这一条 ✓。
  */
 sourceSets["main"].resources.srcDir(file("../naistudio-shared/src/main/resources"))
+sourceSets["main"].resources.srcDir(file("../../assets/dictionary"))
+sourceSets["main"].resources.exclude("danbooru.sqlite.gz")
 
 dependencies {
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("org.xerial:sqlite-jdbc:3.46.1.0")
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     // ⚠️ **不要**加 `compose.materialIconsExtended`：实测它一个包就 **37.7 MB**
@@ -185,12 +189,12 @@ compose.desktop {
             // 要正规安装器（exe/msi）得先装 WiX，再 `targetFormats(TargetFormat.Exe)`，
             // 见 docs/25 方案 §5。
             packageName = "NAI Studio"
-            packageVersion = "1.1.148"
+            packageVersion = "3.0.0"
             description = "NAI Studio 电脑版"
             vendor = "NAI Studio"
             // 裁剪运行时用到的模块：Compose 桌面端（skiko）需要这几个，
             // 少一个就会在 jlink 出来的运行时里报模块缺失。
-            modules("java.instrument", "jdk.unsupported", "java.naming", "jdk.crypto.ec")
+            modules("java.instrument", "jdk.unsupported", "java.naming", "jdk.crypto.ec", "java.sql")
             windows {
                 menu = true
                 shortcut = true
@@ -232,6 +236,7 @@ tasks.withType<Test>().configureEach {
  * 运行时就当资源读（`Main.kt` 用它设窗口图标，见那里的说明）。
  */
 tasks.named<Jar>("jar") {
+    from(rootProject.file("../../docs/third-party/NanoHTTPD-LICENSE.txt")) { into("META-INF/licenses") }
     from(layout.projectDirectory.dir("icons")) {
         include("app-256.png")
         into("icon")

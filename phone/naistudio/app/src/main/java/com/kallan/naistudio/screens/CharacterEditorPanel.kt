@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import com.kallan.naistudio.i18n.RuntimeText
 import com.kallan.naistudio.models.ComicLayout
 import com.kallan.naistudio.models.NaiOption
+import com.kallan.naistudio.models.PromptField
 import com.kallan.naistudio.models.TextFieldTarget
 import com.kallan.naistudio.state.AppState
 import com.kallan.naistudio.ui.ExpandCornersIcon
@@ -225,8 +226,7 @@ fun CharacterEditorPanel(state: AppState, modifier: Modifier = Modifier) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp),
             )
-            return@Column
-        }
+        } else {
 
         // 这里**不能**再加 verticalScroll：外层抽屉已经是竖向滚动的，嵌套会崩
         Column(
@@ -236,6 +236,15 @@ fun CharacterEditorPanel(state: AppState, modifier: Modifier = Modifier) {
             items.forEachIndexed { index, _ ->
                 CharacterCard(state = state, index = index, t = t)
             }
+        }
+        }
+        if (!comic) {
+            Spacer(Modifier.height(10.dp))
+            CharacterTagSearch(state = state, t = t)
+            OutlinedButton(
+                onClick = { state.openAnimaSheetForCharacters() },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) { Text(t("anima.title")) }
         }
     }
 
@@ -741,10 +750,10 @@ private fun CharacterCard(state: AppState, index: Int, t: (String) -> String) {
             }
 
             if (character.expanded) {
-                OutlinedTextField(
+                CharacterPromptTextField(
                     value = character.prompt,
-                    onValueChange = { value -> state.updateCharacter(index) { it.copy(prompt = value) } },
-                    placeholder = { Text(if (comic) t("comic.panelPromptHint") else t("char.positiveHint")) },
+                    onValueChange = { value -> state.setCharacterPrompt(index, false, value) },
+                    placeholder = if (comic) t("comic.panelPromptHint") else t("char.positiveHint"),
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
                     minLines = 3,
                     modifier = Modifier
@@ -759,12 +768,13 @@ private fun CharacterCard(state: AppState, index: Int, t: (String) -> String) {
                             )
                         },
                 )
-                OutlinedTextField(
+                CharacterPromptActions(state = state, t = t, targetField = PromptField.charKey(index, negative = false))
+                CharacterPromptTextField(
                     value = character.negativePrompt,
                     onValueChange = { value ->
-                        state.updateCharacter(index) { it.copy(negativePrompt = value) }
+                        state.setCharacterPrompt(index, true, value)
                     },
-                    placeholder = { Text(t("char.negativeHint")) },
+                    placeholder = t("char.negativeHint"),
                     textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
                     minLines = 2,
                     modifier = Modifier
@@ -778,9 +788,19 @@ private fun CharacterCard(state: AppState, index: Int, t: (String) -> String) {
                             )
                         },
                 )
+                CharacterPromptActions(state = state, t = t, targetField = PromptField.charKey(index, negative = true))
             }
         }
     }
+}
+
+@Composable
+private fun CharacterPromptActions(state: AppState, t: (String) -> String, targetField: String) {
+    var historyOpen by remember { mutableStateOf(false) }
+    PromptActionBar(state = state, t = t, targetField = targetField,
+        onOpenHistory = { historyOpen = true }, explicitTarget = true)
+    if (historyOpen) PromptHistorySheet(state = state, t = t, field = targetField,
+        onDismiss = { historyOpen = false })
 }
 
 // ---------------------------------------------------------------------------

@@ -71,7 +71,7 @@ internal fun InpaintParamsTrigger(
  * 否则 Material 默认的 48dp 触控高度会把这 6 项撑到 400dp 以上。
  */
 @Composable
-internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier: Modifier = Modifier) {
+internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier: Modifier = Modifier, infinite: Boolean = false) {
     val settings = state.settings
     Surface(
         // 网页 `.strip .drop`：和工具条同一张 glass 卡的样子（圆角 16、描边、左右 12）
@@ -96,6 +96,12 @@ internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier
                 .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (infinite) {
+                Text(t("infinite.paramsHint"), style = MaterialTheme.typography.bodySmall)
+            }
+            if (infinite) {
+                Text("${t("inpaint.strength")}: 1.00", style = MaterialTheme.typography.bodySmall)
+            } else {
             CompactSlider(
                 label = t("inpaint.strength"),
                 valueText = "%.2f".format(settings.inpaintStrength),
@@ -106,6 +112,7 @@ internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier
                     state.setSettings { it.copy(inpaintStrength = value.toDouble()) }
                 },
             )
+            }
             CompactSlider(
                 label = t("inpaint.noise"),
                 valueText = "%.2f".format(settings.inpaintNoise),
@@ -146,7 +153,7 @@ internal fun InpaintParamsPanel(state: AppState, t: (String) -> String, modifier
             )
             CompactSwitch(
                 label = t("inpaint.addOriginalImage"),
-                hint = t("inpaint.addOriginalImageHint"),
+                hint = t(if (infinite) "infinite.localPasteHint" else "inpaint.addOriginalImageHint"),
                 checked = settings.inpaintAddOriginalImage,
                 onCheckedChange = { value ->
                     state.setSettings { it.copy(inpaintAddOriginalImage = value) }

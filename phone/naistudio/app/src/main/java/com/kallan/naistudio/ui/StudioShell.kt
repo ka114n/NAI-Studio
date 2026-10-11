@@ -1,5 +1,11 @@
 package com.kallan.naistudio.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
+
+import com.kallan.naistudio.services.BalanceAllowance
 import androidx.compose.ui.draw.shadow
 import com.kallan.naistudio.ui.BoltIcon
 import androidx.compose.ui.draw.drawBehind
@@ -232,6 +238,33 @@ fun StudioShell(state: AppState) {
     ApplicationUpdateHost(com.kallan.naistudio.BuildConfig.VERSION_NAME, "Android", java.io.File(updaterContext.cacheDir, "updates"), { com.kallan.naistudio.services.AndroidApplicationUpdater.install(updaterContext, it) }, state.settings.language)
     val language = state.settings.language
     val t: (String) -> String = { key -> RuntimeText.text(language, key) }
+    if (state.tagDictionaryDownloadPrompt) {
+        AlertDialog(
+            onDismissRequest = { if (!state.tagDictionaryDownloading) state.dismissTagDictionaryDownload() },
+            title = { Text(t("dictionary.downloadTitle")) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(t("dictionary.downloadHint"))
+                    if (state.tagDictionaryDownloading) {
+                        Text("${t("dictionary.downloading")} ${state.tagDictionaryDownloadProgress}%")
+                        androidx.compose.material3.LinearProgressIndicator(progress = { state.tagDictionaryDownloadProgress / 100f }, modifier = Modifier.fillMaxWidth())
+                    } else if (state.tagDictionaryError) {
+                        Text(t("dictionary.downloadFailed"), color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { state.downloadTagDictionary() }, enabled = !state.tagDictionaryDownloading) {
+                    Text(t(if (state.tagDictionaryError) "common.retry" else "dictionary.download"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { state.dismissTagDictionaryDownload() }, enabled = !state.tagDictionaryDownloading) {
+                    Text(t("dictionary.downloadLater"))
+                }
+            },
+        )
+    }
 
     var drawerOpen by rememberSaveable { mutableStateOf(false) }
     /** 「统计」那扇窗开着没（侧边栏底部那颗柱状图图标，用户 2026-09-26）。 */
@@ -246,6 +279,19 @@ fun StudioShell(state: AppState) {
     var selecting by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var confirmingBatchDelete by remember { mutableStateOf(false) }
+    var selectingExport by remember { mutableStateOf(false) }
+    var pendingExportIds by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    val exportFolderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val ids = pendingExportIds.toSet()
+        pendingExportIds = emptyList()
+        if (uri != null) {
+            state.exportGalleryImages(ids, uri)
+            selecting = false
+            selectingExport = false
+            selectedIds = emptySet()
+        }
+    }
+
     val scope = rememberCoroutineScope()
 
     // 两次退出用的状态 + 宿主 Activity（第一次返回只在底部弹提示）
@@ -814,13 +860,19 @@ fun StudioShell(state: AppState) {
                                     selectedIds = emptySet()
                                 }) { Text(t("common.cancel")) }
                                 TextButton(
-                                    onClick = { confirmingBatchDelete = true },
-                                    enabled = selectedIds.isNotEmpty(),
-                                ) { Text(t("common.confirm")) }
+                                    onClick = {
+                                        if (selectingExport) {
+                                            pendingExportIds = selectedIds.toList()
+                                            exportFolderPicker.launch(null)
+                                        } else confirmingBatchDelete = true
+                                    },
+                                    enabled = selectedIds.isNotEmpty() && !state.galleryExportBusy,
+                                ) { Text(if (selectingExport) "导出 (${selectedIds.size})" else t("common.confirm")) }
                             } else {
                                 IconButton(
                                     onClick = {
                                         selecting = true
+                                        selectingExport = false
                                         selectedIds = emptySet()
                                     },
                                     enabled = state.history.isNotEmpty(),
@@ -829,6 +881,28 @@ fun StudioShell(state: AppState) {
                                         Icons.Filled.Delete,
                                         contentDescription = t("gallery.batchDelete"),
                                     )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        selecting = true
+                                        selectingExport = true
+                                        selectedIds = emptySet()
+                                    },
+                                    enabled = state.history.isNotEmpty() && !state.galleryExportBusy,
+                                ) {
+                                    val exportIcon = remember {
+                                        ImageVector.Builder("Export", 24.dp, 24.dp, 24f, 24f).apply {
+                                            path(fill = SolidColor(androidx.compose.ui.graphics.Color.Black)) {
+                                                moveTo(11f, 3f); lineTo(13f, 3f); lineTo(13f, 12f)
+                                                lineTo(16f, 9f); lineTo(17.4f, 10.4f); lineTo(12f, 15.8f)
+                                                lineTo(6.6f, 10.4f); lineTo(8f, 9f); lineTo(11f, 12f); close()
+                                                moveTo(4f, 17f); lineTo(6f, 17f); lineTo(6f, 19f)
+                                                lineTo(18f, 19f); lineTo(18f, 17f); lineTo(20f, 17f)
+                                                lineTo(20f, 21f); lineTo(4f, 21f); close()
+                                            }
+                                        }.build()
+                                    }
+                                    Icon(exportIcon, contentDescription = "多选导出图片")
                                 }
                                 SortIconButton(
                                     contentDescription = t("gallery.controls"),
@@ -973,6 +1047,7 @@ fun StudioShell(state: AppState) {
                             onSelect = { gallerySelection = it },
                             selecting = selecting,
                             selectedIds = selectedIds,
+                            selectDisplayedImage = selectingExport,
                             onToggleSelect = { id ->
                                 selectedIds = if (id in selectedIds) {
                                     selectedIds - id
@@ -1501,10 +1576,9 @@ private fun AccountCapsule(state: AppState, t: (String) -> String) {
     val skin = ref.runSkin()
     val tier = account.tierName ?: "API"
     val balance = account.anlasBalance?.let { "%,d".format(it) } ?: "—"
-    val showV5Allowance = account.tierLevel == 3 && params.model.startsWith("nai-diffusion-5-")
-    val remainingPercent = account.opusUsage
-        ?.takeIf { showV5Allowance }
-        ?.let { if (it.isNegative) 0f else it.percent.coerceIn(0.0, 100.0).toFloat() }
+    val allowance = BalanceAllowance.resolve(account, state.usingGateway, state.gatewayQuota)
+    val remainingPercent = allowance?.percent?.toFloat()
+    val percentText = allowance?.let { if (it.unlimited) "∞" else "${it.percent ?: "—"}%" }
     val spin = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     Surface(
@@ -1525,13 +1599,13 @@ private fun AccountCapsule(state: AppState, t: (String) -> String) {
     ) {
         Box {
             Row(
-                Modifier.fillMaxHeight().padding(start = 6.dp, end = 14.dp),
+                Modifier.fillMaxHeight().padding(start = 6.dp, end = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Box(
                     Modifier
-                        .size(32.dp)
+                        .size(28.dp)
                         .drawBehind {
                             drawCircle(runGradient(skin, size))
                             val p = spin.value
@@ -1559,7 +1633,7 @@ private fun AccountCapsule(state: AppState, t: (String) -> String) {
                     )
                 }
                 if (state.hasToken) {
-                    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                         Text(
                             balance,
                             color = ref.text,
@@ -1568,16 +1642,31 @@ private fun AccountCapsule(state: AppState, t: (String) -> String) {
                             fontWeight = FontWeight(650),
                             maxLines = 1,
                         )
-                        Text(
-                            buildAnnotatedString {
-                                withStyle(SpanStyle(color = ref.accent, fontWeight = FontWeight(650))) { append(tier) }
-                                if (remainingPercent != null) append(" · V5 额度 ${remainingPercent.toInt()}%")
-                            },
-                            color = ref.faint,
-                            fontSize = 10.5.sp,
-                            lineHeight = 12.sp,
-                            maxLines = 1,
-                        )
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                tier,
+                                modifier = Modifier.weight(1f),
+                                color = ref.accent,
+                                fontSize = 10.5.sp,
+                                lineHeight = 12.sp,
+                                fontWeight = FontWeight(650),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (percentText != null) Text(
+                                percentText,
+                                color = ref.text,
+                                fontSize = 10.5.sp,
+                                lineHeight = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
                     }
                 } else {
                     Text(t("generate.notConfigured"), color = ref.muted, fontSize = 12.5.sp, maxLines = 1)
@@ -1613,30 +1702,10 @@ private fun AccountChip(state: AppState, t: (String) -> String) {
     val tier = account.tierName ?: "API"
     val balance = account.anlasBalance?.toString() ?: "—"
 
-    // 与参考实现一致：只有 Opus 档 + V5 模型才显示 V5 免费额度
-    val showV5Allowance = account.tierLevel == 3 && params.model.startsWith("nai-diffusion-5-")
-    val usage = account.opusUsage
-    val suffix = if (showV5Allowance && usage != null) {
-        val percent = if (usage.isNegative) 0 else usage.percent.coerceIn(0.0, 100.0).toInt()
-        " · V5 $percent%"
-    } else {
-        ""
-    }
+    val allowance = BalanceAllowance.resolve(account, state.usingGateway, state.gatewayQuota)
+    val remainingPercent = allowance?.percent?.toFloat()
+    val suffix = allowance?.let { " · ${t(it.labelKey)} ${if (it.unlimited) "∞" else "${it.percent ?: "—"}%"}" } ?: ""
 
-    // 用户 2026-09-24：「**额度像电脑一样变成胶囊**」✓ ——
-    // 以前是一颗 `TextButton`（方方正正、带默认内边距 + 最小宽度 ✗），
-    // 现在照电脑线那颗「余额胶囊」的样子：**圆角胶囊 + 半透明底 + 描边**，
-    // 点一下仍然是刷新额度（`refreshAnlas` ✓ 功能没动 ✓）。
-    //
-    // ⚠️ 用户 2026-09-26：「**余额按钮下做一个进度条，看剩余的百分比，进度条采用渐变形式**」——
-    //    所以整颗变成一列：[胶囊][3dp][进度条]。关于"剩余的百分比"取哪个数：
-    //    就用**胶囊里那个 `V5 N%`**（同一个 `account.opusUsage`），不另算一套口径 ——
-    //    这样"字是 62%、条也是 62%"，不会出现两个数打架。
-    //    **条和字共用同一个条件**（Opus + V5 模型才算数）：字在不显示的时候条也不显示，
-    //    免得出现"没写百分比、却挂着一条进度条"这种对不上的画面。
-    val remainingPercent = usage
-        ?.takeIf { showV5Allowance }
-        ?.let { if (it.isNegative) 0f else it.percent.coerceIn(0.0, 100.0).toFloat() }
     val ref = LocalRef.current
     Column(
         horizontalAlignment = Alignment.End,

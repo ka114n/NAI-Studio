@@ -21,3 +21,6 @@ Thumbs.db
 *PRIVATE-credentials*
 .env
 .env.*
+
+**/__pycache__/
+*.pyc

@@ -71,6 +71,9 @@ class PromptHighlightTransformation(
                 }
                 if (style != null) addStyle(style, span.start, span.end)
             }
+            for (marker in PromptWeight.closingMarkers(raw)) {
+                addStyle(SpanStyle(color = colors.closing), marker.first, marker.last + 1)
+            }
         }
         return TransformedText(annotated, OffsetMapping.Identity).also {
             cachedInput = raw

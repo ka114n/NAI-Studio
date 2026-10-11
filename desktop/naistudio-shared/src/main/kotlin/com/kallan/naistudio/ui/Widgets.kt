@@ -50,7 +50,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import com.kallan.naistudio.ui.RefSwitch as Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -116,7 +116,7 @@ fun StudioPageContainer(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(
-                Modifier.fillMaxWidth().widthIn(max = 1120.dp).padding(horizontal = pagePadding, vertical = 24.dp),
+                Modifier.widthIn(max = 1120.dp).fillMaxWidth().padding(horizontal = pagePadding, vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
                 content = {
                     StudioPageHeader(title = title, subtitle = subtitle, actions = actions)
@@ -167,6 +167,7 @@ fun StudioButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     kind: StudioButtonKind = StudioButtonKind.Secondary,
+    fullWidth: Boolean = true,
     content: @Composable RowScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -224,7 +225,7 @@ fun StudioButton(
             },
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp),
+            (if (fullWidth) Modifier.fillMaxWidth() else Modifier).padding(horizontal = 14.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
             content = content,
@@ -324,6 +325,7 @@ fun SectionCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = NaiSkinTokens.glass(),
+        contentColor = NaiSkinTokens.text(),
         border = BorderStroke(1.dp, NaiSkinTokens.border()),
         shadowElevation = if (LocalNaiSkin.current == NaiSkin.Reference) 2.dp else 0.dp,
     ) {

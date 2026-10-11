@@ -21,25 +21,14 @@ val hasProjectKeystore = keystoreProps.getProperty("storeFile") != null &&
     rootProject.file(keystoreProps.getProperty("storeFile")).exists()
 
 // ---------------------------------------------------------------------------
-// 版本号：**每次构建自动生成**，唯一且单调递增 —— 不用手改，也就不会忘。
-//   · versionName = 0.2.xx，xx 是**迭代次数**（两位数，从 03 起，每次构建 +1）：
-//     次数存在工程根的 `version-iteration.txt` 里，读一次就把文件写成下一次的值，
-//     所以"这一包是 0.2.03、下一包是 0.2.04"是自动的，人只需要报号。
-//   · versionCode = 2026-01-01 起的秒数：单调递增、同秒内不会重复，
-//     而且远小于 Google Play 的上限 2100000000（按这个速率能用几十年）。
-//   · 构建时间戳/版本形态另外放进 BuildConfig（BUILD_STAMP），「关于」里显示，
-//     需要回溯"这一包是哪一次构建"时看它，不必塞进 versionName。
+// 版本号从 3.0.0 开始，每个 assemble 递增 patch；versionCode 保持时间序列，不重置。
 // ---------------------------------------------------------------------------
 val versionIterationFile = rootProject.file("version-iteration.txt")
-/** 本次构建用的迭代号（文件里的值；文件不存在就从 1 起）。 */
 val versionIteration: Int = versionIterationFile
-    .takeIf { it.exists() }
-    ?.readText()?.trim()?.toIntOrNull()
-    ?: 1
-// 版本号体系（用户 2026-09-16 定）：**1.1.x**，x 从 1 开始、每出一个包 +1。
-// 之前是 `0.2.xx`（两位补零）。迭代号仍存在同一个文件里，机制不变
-// （读一次 → 这一包用旧值 → 写回 +1），只是不再补零、前缀换成 1.1。
-val semverBase = "1.1.$versionIteration"
+   .takeIf { it.exists() }
+   ?.readText()?.trim()?.toIntOrNull()
+   ?: 1
+val semverBase = "3.0.$versionIteration"
 val epochSeconds2026 = 1_767_225_600L // 2026-01-01T00:00:00Z
 val buildStamp = SimpleDateFormat("yyMMddHHmmss", Locale.US).format(Date())
 val autoVersionCode = ((System.currentTimeMillis() / 1000L) - epochSeconds2026).toInt()
@@ -53,7 +42,7 @@ tasks.matching { it.name.startsWith("assemble") }.configureEach {
             versionBumped = true
             versionIterationFile.writeText((versionIteration + 1).toString())
             logger.lifecycle(
-                "版本：本次 $semverBase；下一次 0.2.%02d".format(versionIteration + 1),
+                "版本：本次 $semverBase；下一次 3.0.${versionIteration + 1}",
             )
         }
     }
@@ -156,12 +145,14 @@ android {
             //    只带 `kotlin` 不带 `resources` 的话，`getResourceAsStream("/dictionary.tsv")`
             //    会**静默返回 null** ✓ —— 词典整个不生效、而且**一个错都不报** ✗（最难查的那类 ✓）。
             resources.srcDir(rootProject.file("../naistudio-shared/src/main/resources"))
+            resources.srcDir(rootProject.file("../../assets/dictionary"))
         }
     }
 
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "danbooru.sqlite.gz"
         }
     }
 }

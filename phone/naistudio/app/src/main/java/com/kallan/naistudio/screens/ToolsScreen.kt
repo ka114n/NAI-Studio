@@ -23,6 +23,8 @@ import com.kallan.naistudio.ui.RefButton as Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import com.kallan.naistudio.ui.RefOutlinedButton as OutlinedButton
+import com.kallan.naistudio.ui.RefOutlinedTextField as OutlinedTextField
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material3.Text
 import com.kallan.naistudio.ui.RefTextButton as TextButton
 import androidx.compose.runtime.Composable
@@ -124,6 +126,7 @@ fun ToolsScreen(state: AppState) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         when (currentTool.id) {
+            ToolCatalog.DICTIONARY -> TagDictionaryTool(state)
             ToolCatalog.METADATA -> MetadataTool(
                 state = state,
                 t = t,
@@ -392,6 +395,15 @@ private fun ReversePromptTool(
         )
     }
 
+    RefSeg(
+        options = listOf(t("reverse.online"), t("reverse.remote")),
+        selected = if (state.reverseRemote) 1 else 0,
+        onSelect = { state.chooseReverseRemote(it == 1) },
+    )
+    if (state.reverseRemote && state.reverseRemoteStatus.isNotBlank()) {
+        RefHint(state.reverseRemoteStatus)
+    }
+
     // 网页「反推提示词」：pick-img → label + seg → 主按钮 → 结果框 → 复制 / 发送 → hint
     ToolPickImage(
         path = state.reverseImagePath,
@@ -405,6 +417,7 @@ private fun ReversePromptTool(
         }
     }
 
+    if (!state.reverseRemote) {
     Text(t("reverse.mode"), fontSize = 12.5.sp, color = LocalRef.current.muted)
     RefSeg(
         options = PromptRules.MODES.map { mode ->
@@ -418,13 +431,17 @@ private fun ReversePromptTool(
         onSelect = { i -> state.setSettings { it.copy(reverseRuleMode = PromptRules.MODES[i]) } },
     )
 
+    }
+
     RefBtn(
-        if (state.reverseBusy) t("reverse.running") else t("reverse.start"),
-        onClick = { state.runReverseForTool() },
+        if (state.reverseBusy) t("reverse.running") else t(if (state.reverseRemote) "reverse.remote.start" else "reverse.start"),
+        onClick = { if (state.reverseRemote) state.runRemoteReverse() else state.runReverseForTool() },
         modifier = Modifier.fillMaxWidth(),
         enabled = state.reverseImagePath != null && !state.reverseBusy,
         icon = SparkleIcon,
     )
+
+    if (state.reverseBusy && state.reverseRemote) RefBtn(t("reverse.remote.cancel"), onClick = { state.cancelRemoteReverse() }, kind = RefBtnKind.Ghost)
 
     val result = state.reverseResult
     val ref = LocalRef.current
@@ -464,5 +481,5 @@ private fun ReversePromptTool(
             )
         }
     }
-    RefHint(t("reverse.hint"))
+    RefHint(t(if (state.reverseRemote) "reverse.remote.hint" else "reverse.hint"))
 }

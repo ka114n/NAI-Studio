@@ -2,7 +2,6 @@ package com.kallan.naistudio.desktop
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -31,8 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draganddrop.DragAndDropEvent
-import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -65,10 +62,6 @@ import com.kallan.naistudio.platform.logWarn
 import kotlin.math.roundToInt
 import kotlin.system.exitProcess
 import kotlinx.coroutines.flow.debounce
-import java.awt.dnd.DropTargetDragEvent
-import java.awt.dnd.DropTargetDropEvent
-import java.awt.datatransfer.DataFlavor
-import java.awt.datatransfer.Transferable
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileLock
@@ -264,6 +257,8 @@ private fun runDesktopApp() = application {
     }
 
     val state = remember(platform) { AppState(platform) }
+    // Open the authenticated phone endpoint in the background on every app launch.
+    LaunchedEffect(state) { state.startReverseSharing() }
 
     // ---- ㉕ 批：**网页笔刷**（用户 2026-09-20 口径：「直接搬，不修」✓）----
     // 只做一件事：把"开窗"这个动作挂到共用信箱上 ✓（共用面板那颗按钮负责调它，
@@ -448,14 +443,6 @@ private fun runDesktopApp() = application {
                                 state.redoInfiniteCanvas()
                                 true
                             }
-                            !event.isCtrlPressed && !event.isShiftPressed &&
-                                (key == Key.LeftBracket || key == Key.RightBracket) -> {
-                                val step = if (key == Key.RightBracket) 64 else -64
-                                state.setSettings {
-                                    it.copy(infiniteContext = (it.infiniteContext + step).coerceIn(0, 512))
-                                }
-                                true
-                            }
                             else -> false
                         }
                     } else false
@@ -613,28 +600,6 @@ private fun runDesktopApp() = application {
         // 拖动标题栏 = 拖窗口、双击 = 最大化/还原；三颗窗口按钮也由我们画（见 `WindowChrome`）
         val windowChrome = rememberWindowChrome(window, ::exitApplication)
 
-        // 电脑专属：**把图片文件拖进窗口 = 导入图片**（图生图的底图）。
-        // 手机上"导图"只有一条路（系统相册），电脑上有鼠标就该能拖 —— 这是桌面版最省事、
-        // 也最容易被期待的一个操作（见 docs/25 §2.3 的交互范式清单）。
-        // 落地逻辑在 [FileDropTarget]（为什么不能自己挂 AWT `DropTarget`，那儿有实证）。
-        val dropTarget = remember(state, uiHost) {
-            FileDropTarget(
-                onImage = { file ->
-                    state.importDroppedImage(file.absolutePath)
-                    uiHost.toast(
-                        RuntimeText.format(
-                            state.settings.language,
-                            "drop.done",
-                            mapOf("name" to file.name),
-                        ),
-                    )
-                },
-                onNotImage = {
-                    uiHost.toast(RuntimeText.text(state.settings.language, "drop.notImage"), long = true)
-                },
-            )
-        }
-
         val settings = state.settings
         val dark = when (settings.theme) {
             "dark" -> true
@@ -778,15 +743,7 @@ private fun runDesktopApp() = application {
                     .fillMaxSize()
                     // 量一下窗口客户区尺寸：磨砂壁纸是按它 Crop 铺开的，
                     // 面板要"自己重画一遍壁纸"（[glassBackdrop]）就得知道这个基准
-                    .onSizeChanged { backdropSize = it }
-                    // **拖放导入图片的落点**：这条就是 CMP 拖放管理器自己那条路
-                    //（[FileDropTarget] 的注释里写了为什么挂 AWT `DropTarget` 收不到）。
-                    // 挂在根 Box 上、且 `shouldStartDragAndDrop` 只认文件拖动 ——
-                    // 拖一段文字进来不会被这一层接走（也就不会弹提示）。
-                    .dragAndDropTarget(
-                        shouldStartDragAndDrop = { event -> event.isFileDrag() },
-                        target = dropTarget,
-                    ),
+                    .onSizeChanged { backdropSize = it },
             ) {
                 // 背景图层：自选图或主题柔光底图，位于所有内容的最底下。
                 // 用 `Crop` 铺满（等比不裁会留黑边；超大的图在 `customBackgroundBitmap` 里已经缩过）。
@@ -847,18 +804,6 @@ private fun runDesktopApp() = application {
                             else -> StudioShell(state, appName = "NAI Studio")
                         }
                     }
-                    }
-                    // **拖着图片悬在窗口上时的提示浮层**（活 1）。
-                    // ⚠️ 刻意放在 `NaiStudioTheme` **里面**：它按 `MaterialTheme.colorScheme` 取色，
-                    // 放在外面（开屏/轻提示那一层的旁边）拿到的是 Material3 默认配色、不是 App 主题。
-                    // 层序：在界面之上、开屏/轻提示/主题扩散之下（它不该盖住那几层）。
-                    // 状态来自 [FileDropTarget]（Compose 拖放回调写、这里读）。
-                    if (dropTarget.isHovering) {
-                        DropHintOverlay(
-                            language = state.settings.language,
-                            isHovering = true,
-                            fileName = dropTarget.hoverName,
-                        )
                     }
                 }
                 }
@@ -1092,175 +1037,6 @@ private fun loadWindowGeometry(platform: Platform): WindowGeometry {
         screenWidth = bounds.width,
         screenHeight = bounds.height,
     )
-}
-
-/** 拖进窗口的文件里，哪些扩展名当图片处理。 */
-private val DROPPABLE_IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp", "bmp", "gif")
-
-/**
- * 从 Compose 的拖放事件里掏出 AWT 那一份数据。
- *
- * 电脑上外来拖放的 `nativeEvent` 就是 AWT 的 `DropTargetDragEvent` / `DropTargetDropEvent`
- *（实证：`AwtDragAndDropManager$dropTargetListener` 里有这两个重载的
- *`DragAndDropEvent(DropTargetDragEvent)` / `(DropTargetDropEvent)`），两者的
- * `transferable` 都拿着"被拖的那些文件"。取不到就当"不是文件"。
- *
- * ⚠️ Compose 自己那个 `Transferable.dragData()` 是 **internal** 的（编译不过），
- * 所以这里直接读 `DataFlavor.javaFileListFlavor`。
- */
-@OptIn(ExperimentalComposeUiApi::class)
-private fun DragAndDropEvent.awtTransferable(): Transferable? = when (val native = nativeEvent) {
-    is DropTargetDropEvent -> native.transferable
-    is DropTargetDragEvent -> native.transferable
-    else -> null
-}
-
-/** 这次拖的是不是**文件**（不是文件就不接这一趟，免得拖一段文字进来也弹提示）。 */
-@OptIn(ExperimentalComposeUiApi::class)
-private fun DragAndDropEvent.isFileDrag(): Boolean = runCatching {
-    // ⚠️ 优先问 AWT 事件自己：`DropTargetDragEvent.isDataFlavorSupported` **不需要**能拿到
-    // transferable（悬停阶段有的拖放源就是不给），比先去拿 transferable 再去问它稳。
-    when (val native = nativeEvent) {
-        is DropTargetDragEvent -> native.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
-        is DropTargetDropEvent -> native.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
-        else -> awtTransferable()?.isDataFlavorSupported(DataFlavor.javaFileListFlavor) == true
-    }
-}.getOrDefault(false)
-
-/** 这次拖进来的**第一个文件**（不是文件拖放就是 null）。 */
-@OptIn(ExperimentalComposeUiApi::class)
-private fun DragAndDropEvent.draggedFile(): File? = runCatching {
-    val transferable = awtTransferable() ?: return@runCatching null
-    @Suppress("UNCHECKED_CAST")
-    val files = transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File>
-        ?: return@runCatching null
-    files.firstOrNull()
-}.getOrNull()
-
-/**
- * **把图片文件拖进窗口 = 直接载入图片**（用户 2026-09-19：「新增将图片拖入直接加载图片的功能」）。
- *
- * ## 为什么早先那版拖进来毫无反应
- *
- * 早先是在 `Window` 的 `window`（那个 `ComposeWindow`，本质是 `JFrame`）上自己挂了一个 AWT
- * `DropTarget`。但 CMP 1.8.2 的 `ComposeSceneMediator` **无条件**会给内容面板（一个 `JComponent`）
- * 挂一个（`javap` 实证：`container.setDropTarget(dragAndDropManager.getDropTarget())`），
- * 而 AWT 的规矩是"拖放只交给光标底下**最深**的那个有活动 DropTarget 的组件"—— 内容面板铺满
- * 整个窗口，挂在外层 `JFrame` 上的那个**永远收不到** ✗（docs/25 §106.1 有实证记录）。
- * 所以那一版是死代码，本次已整体删掉。
- *
- * 现在改走 Compose 自己的 [dragAndDropTarget]：它就是管理器那条路，天然收得到；
- * 顺带还能拿到"正拖着东西悬在窗口上"的状态（[hoverName]），界面据此盖一层提示浮层。
- *
- * ## 落地动作
- *
- * [onImage]：交给 `AppState.importDroppedImage(path)` —— 和点「导入图片」走**同一条**逻辑
- *（读盘 → 缩放 → 复制进私有目录 → 填进图生图底图 + 预览），所以拖进来的图跟在选择器里选一张
- * 完全一致，并且会切回文生图页（拖放可能发生在图库 / 工具页）。
- *
- * ⚠️ 拖到**非图片**时给一句提示而不是静默忽略 —— 用户拖了个 PDF 进来，得知道为什么不理它。
- */
-@OptIn(ExperimentalComposeUiApi::class)
-private class FileDropTarget(
-    private val onImage: (File) -> Unit,
-    private val onNotImage: () -> Unit,
-) : DragAndDropTarget {
-    /** 正悬在窗口上的文件名（`null` = 名字读不出来，但确实有文件拖着）。提示浮层读它。 */
-    var hoverName by mutableStateOf<String?>(null)
-        private set
-
-    /** 现在有没有文件悬在窗口上（提示浮层靠它决定画不画）。 */
-    var isHovering by mutableStateOf(false)
-        private set
-
-    override fun onEntered(event: DragAndDropEvent) {
-        hoverName = event.draggedFile()?.name
-        isHovering = true
-    }
-
-    // 位置每帧都在变，但这儿的提示只看文件名，所以照样只在名字变了才写状态
-    override fun onChanged(event: DragAndDropEvent) {
-        val name = event.draggedFile()?.name
-        if (name != hoverName) hoverName = name
-        isHovering = true
-    }
-
-    override fun onExited(event: DragAndDropEvent) {
-        hoverName = null
-        isHovering = false
-    }
-
-    override fun onEnded(event: DragAndDropEvent) {
-        hoverName = null
-        isHovering = false
-    }
-
-    override fun onDrop(event: DragAndDropEvent): Boolean {
-        hoverName = null
-        isHovering = false
-        val file = event.draggedFile()
-        val image = file?.takeIf { it.isFile && it.extension.lowercase() in DROPPABLE_IMAGE_EXTENSIONS }
-        if (image == null) {
-            onNotImage()
-            return false
-        }
-        onImage(image)
-        return true
-    }
-}
-
-/**
- * **拖着图片悬在窗口上时的提示浮层**（活 1 补回来的那一层）。
- *
- * 形状：整窗一层半透明遮罩 + 居中一颗胶囊，写「松开鼠标载入：<文件名>」。
- * 为什么要有：以前拖着文件进窗口**一点反馈都没有**，用户不知道这条路接没接上
- *（见 docs/25 §106 与 §130.4 的遗留清单：这一层在那次事故里丢了）。
- *
- * 文案走共用树的 i18n（`naistudio-shared/src/main/kotlin/com/kallan/naistudio/i18n/RuntimeText.kt`，
- * **只读确认、没有改那个文件**）：
- *  · `drop.hint`      =「松开鼠标，载入为图生图底图」—— 还不知道文件名时的兜底；
- *  · `drop.hintNamed` =「松开鼠标载入：{name}」—— 知道文件名时用它。
- * ⚠️ 任务里提到的 `drop.release` 这个键 **`RuntimeText` 里并不存在**
- *（`drop.*` 一共只有 `hint` / `hintNamed` / `done` / `notImage` 四条），所以用 **`drop.hintNamed`**
- * 顶上 —— 语义一致、中英两套都有。万一将来键名再变了，`RuntimeText.text` 找不到键时是
- * **原样返回 key**（不抛异常），所以这里不会崩，只是文案会露出键名。
- *
- * ⚠️ 位置由调用方决定：挂在 `NaiStudioTheme` 里面（要 App 的配色），
- * 在开屏 / 轻提示 / 主题扩散那几层**之下**。调用方只在 [isHovering] 为真时才调它。
- *
- * @param language 当前语言（`settings.language`），文案走 [RuntimeText]。
- * @param isHovering 有没有文件悬在窗口上（来自 `FileDropTarget.isHovering`）。
- * @param fileName 悬着的文件名；`null` / 空串时用不带名字的兜底文案。
- */
-@Composable
-private fun DropHintOverlay(language: String, isHovering: Boolean, fileName: String?) {
-    if (!isHovering) return
-    val hint = if (fileName.isNullOrBlank()) {
-        RuntimeText.text(language, "drop.hint")
-    } else {
-        RuntimeText.format(language, "drop.hintNamed", mapOf("name" to fileName))
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            // 半透明遮罩：底下的界面还看得见，但一眼就知道"现在是拖放状态"
-            //（拖动期间的指针事件归平台拖放那条路，这层不吃点击，也没有点击可言）
-            .background(Color.Black.copy(alpha = 0.35f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shadowElevation = 8.dp,
-        ) {
-            Text(
-                text = hint,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
-            )
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------

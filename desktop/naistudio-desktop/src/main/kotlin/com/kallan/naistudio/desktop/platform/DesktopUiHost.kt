@@ -36,33 +36,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * **电脑端的宿主能力**（[UiHost] 的桌面实现）。
- *
- * 手机那套（ActivityResult / Toast / Intent）在桌面上没有对应物，所以这里是**另一套**：
- *
- * · 选图 / 选文件 / 另存为 → AWT [FileDialog]（Windows 上就是系统原生那一套：
- *   `GetOpenFileName` / `GetSaveFileName`）；
- * · 选目录 → **Windows 原生的文件夹选择器**（Shell 的 `IFileOpenDialog` + `FOS_PICKFOLDERS`，
- *   见 [DesktopFolderDialog]）；**这条路走不通才退回** Swing [JFileChooser]
- *   （AWT 的 `FileDialog` 在 Windows 上只能选文件、选不了文件夹，所以退路只能是它）；
- * · 轻提示 → [DesktopToasts] 自绘浮层（桌面没有 Toast，见那里的说明）；
- * · 打开链接 → `Desktop.browse`（系统默认浏览器）。
- *
- * ## 对话框是**阻塞**的，这是故意的
- *
- * `FileDialog.isVisible = true`（选目录那条是 `IFileOpenDialog::Show`）会阻塞到用户选完为止。
- * 它跑在 AWT 事件线程上，而模态对话框本来就会吃掉输入（Swing/Compose Desktop 的标准做法），
- * 所以"界面在对话框开着时不动"是预期行为，不是卡死。
- *
- * ## owner 与"上次用过的目录"（用户 2026-09-24）
- *
- * 三条文件对话框都做两件事：
- *  1. **把主窗口当 owner 传进去** —— 不传的话对话框不属于本窗口，可能跑到主窗口后面，
- *     也不和主窗口互斥（用户点得到主窗口、界面状态就乱了）；
- *  2. **初始目录 = 上次用过的那个**（键 `dialog.lastDir`，存在 `platform.kv` 里）。
- *
- * 回调统一用 [rememberUpdatedState] 取最新那份 —— 和手机端同一个理由。
+/** Desktop UI host. Windows uses Common Item Dialog for files, saves and folders.
+ * Native failure shows an error; Windows never falls back to a Java picker.
+ * Other platforms retain their AWT/Swing pickers. Owner and last folder are preserved.
  */
 class DesktopUiHost : UiHost {
 
@@ -86,19 +62,7 @@ class DesktopUiHost : UiHost {
         return fileLauncher(onPicked, title = "另存为", extensions = extensions, save = true)
     }
 
-    /**
-     * **选目录**（设置页那个"自定义保存目录"）。
-     *
-     * 用户 2026-09-24：「选择文件的框能不能用 win 的文件管理器? 这个自带的不太好用」——
-     * 原来这里用的是 `JFileChooser`：那是 **Java/Swing 自己画的**界面，和资源管理器长得完全不同。
-     * 现在改成 **Windows 原生的文件夹选择器**（Shell 的 `IFileOpenDialog`，见 [DesktopFolderDialog]）。
-     *
-     * 三条出路，按顺序：
-     *  1. 原生对话框（Windows + JNA 在位 + COM 建得出来）—— 正常情况走这条；
-     *  2. 原生**建不出来**（非 Windows / 缺 JNA / COM 失败）→ 退回 [swingFolderPicker]
-     *     （和以前那个 `JFileChooser` 同一份行为，只是补上了 owner 与"上次用过的目录"）；
-     *  3. 用户**取消** → 回调 `null`（与手机 SAF / 原来的实现同一个契约，见 `UiHost` 的说明）。
-     */
+    /** Select an output directory through Windows Shell; cancel returns null. */
     @Composable
     override fun rememberFolderPicker(onPicked: (String?) -> Unit): RefLauncher {
         val current = rememberUpdatedState(onPicked)
@@ -121,8 +85,13 @@ class DesktopUiHost : UiHost {
                         // 取消 = 只把 null 交回去（**不再弹备用的那个框**：
                         // 用户刚说了"不要"，再糊他一个更丑的对话框是最差的体验）
                         FolderPick.Cancelled -> current.value(null)
-                        // 原生这条路今天走不通 → 退回 Swing 那个选择器（= 以前的行为）
-                        FolderPick.Unavailable -> current.value(swingFolderPicker(owner, startedIn, kv))
+                        // Windows 原生失败只提示；其它系统保留其原有目录选择器。
+                        FolderPick.Unavailable -> {
+                            if (isWindowsPlatform()) {
+                                toast("无法打开 Windows 文件夹选择窗口，请重试", long = true)
+                                current.value(null)
+                            } else current.value(swingFolderPicker(owner, startedIn, kv))
+                        }
                     }
                 }
             }
@@ -130,7 +99,7 @@ class DesktopUiHost : UiHost {
     }
 
     /**
-     * 退路：Swing 的 [JFileChooser]（原来的实现）。
+     * 非 Windows 平台的目录选择器。
      *
      * 相对原来那版做了两处最小改进，都只是为了"跟上面那条原生的一样好用"：
      *  · 把主窗口当 owner 传（原来传的是 `null`）→ 对话框属于本窗口、不会跑到后面；
@@ -217,19 +186,7 @@ class DesktopUiHost : UiHost {
     override fun panCursor(grabbing: Boolean): Modifier =
         Modifier.pointerHoverIcon(PointerIcon(HandCursors.of(grabbing)))
 
-    /**
-     * **选文件 / 另存为**（选图走的是同一份）：AWT [FileDialog]，
-     * Windows 上它就是系统原生对话框（`GetOpenFileName` / `GetSaveFileName`），不需要换。
-     *
-     * 这里只把三个常见的坑补上（用户 2026-09-24 的复查）：
-     *  1. **owner**：原来传的是 `null`（`FileDialog(null as Frame?, …)`）—— 那样对话框
-     *     不属于本窗口，可能跑到主窗口后面、也不和主窗口互斥。现在把主窗口传进去；
-     *  2. **初始目录**：记住上次用过的那个（`dialog.lastDir`），下次直接从那儿开；
-     *  3. **置前**：开框之前把主窗口 `toFront()`（对话框是挂在它身上的，
-     *     主窗口在前面时对话框才不会被别的窗口压住）。
-     *
-     * `save = true` 时是"保存"模式，建议文件名走 [RefLauncher.launch] 的 `input`。
-     */
+    /** All image/file imports and save-as operations share this native Windows route. */
     @Composable
     private fun fileLauncher(
         onPicked: (String?) -> Unit,
@@ -246,6 +203,24 @@ class DesktopUiHost : UiHost {
                     val owner = desktopOwnerFrame()
                     val startedIn = lastDialogDir(kv)
                     runCatching { owner?.toFront() }
+                    if (isWindowsPlatform()) {
+                        when (val result = DesktopFolderDialog.pickFile(
+                            owner, startedIn, WindowsDialogRequest(
+                                save = save, title = title, extensions = exts, suggestedName = input,
+                            ),
+                        )) {
+                            is FolderPick.Picked -> {
+                                rememberDialogDir(kv, File(result.path))
+                                current.value(result.path)
+                            }
+                            FolderPick.Cancelled -> current.value(null)
+                            FolderPick.Unavailable -> {
+                                toast("无法打开 Windows 文件选择窗口，请重试", long = true)
+                                current.value(null)
+                            }
+                        }
+                        return
+                    }
                     val dialog = FileDialog(
                         owner,
                         title,
@@ -279,6 +254,7 @@ class DesktopUiHost : UiHost {
                     dialog.isVisible = true
                     val dir = dialog.directory
                     val name = dialog.file
+                    dialog.dispose()
                     val picked = if (dir != null && name != null) File(dir, name).absolutePath else null
                     // 成功才记目录（取消时 `FileDialog` 会把 directory/file 清成 null，
                     // 不被这个 if 挡住的话就会记下"瞎猜的目录"）
@@ -290,6 +266,7 @@ class DesktopUiHost : UiHost {
     }
 
     private fun extensionsOf(mimeTypes: List<String>): List<String> {
+        if ("*/*" in mimeTypes) return emptyList()
         val out = mutableListOf<String>()
         mimeTypes.forEach { mime ->
             when {
@@ -298,7 +275,11 @@ class DesktopUiHost : UiHost {
                 // 非 Windows 平台（过滤器真生效的那几个 ✓）就会把用户建议的 `comic.psd`
                 // 判成"不合格的文件名"✗（Windows 上这个过滤器本来也不生效 ✓）
                 mime.contains("photoshop") || mime.endsWith("psd") -> out += PSD_EXTENSIONS
+                mime == "image/png" -> out += ".png"
+                mime == "image/jpeg" -> out += listOf(".jpg", ".jpeg")
+                mime == "image/webp" -> out += ".webp"
                 mime.startsWith("image/") -> out += IMAGE_EXTENSIONS
+                mime.contains("zip") -> out += ".zip"
                 mime.contains("json") -> out += ".json"
                 mime.endsWith("png") -> out += ".png"
                 mime.endsWith("jpeg") || mime.endsWith("jpg") -> out += ".jpg"

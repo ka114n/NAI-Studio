@@ -1,5 +1,9 @@
 package com.kallan.naistudio.screens
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.text.style.TextAlign
@@ -79,39 +83,11 @@ private const val INFINITE_WHEEL_STEP = 0.15f
 private const val INFINITE_FRAME_MIN = 64f
 private const val INFINITE_CONTEXT_MAX = 512f
 
-/** 右下角那个缩放把手的命中半径（**屏幕 px** ✓）——跟手指 / 鼠标走，不跟文档走 ✓。 */
-private const val FRAME_HANDLE_HIT = 48f
 
 /** 这一下在框上是什么意思（拖动那串手势据此分派 ✓）。 */
-private enum class FrameDrag { CREATE, MOVE, RESIZE, PAN }
+private enum class FrameDrag { CREATE, MOVE, PAN }
 
-/**
- * **无限画布本体**（第 ㊿k 批 ✓，方案 `docs/69` ✓）。
- *
- * ## 口径（用户 2026-09-22 当场改过一次，以这版为准 ✓）
- *
- * > 「**拓展画布交给用户，给一个可以调大小的框，用户想要拓展就将框移到画像外想要拓展的部分，
- * > 然后可能会生成一张凸出一块的图，未绘制的地方就是透明通道**」
- *
- * ⇒ **拓展不再靠四边 `+` 按钮** ✗（第一版做的那个已删 ✓），而是：
- *
- *  1. 在画布上**拖一个框** ✓（也可以拖到**画布外面** ✓ —— 那就是"往那边拓展"的意思 ✓）；
- *  2. 框可以**整块拖动** ✓（按在框里拖 ✓）；**右下角一个把手**可以调大小 ✓
- *     （四个角都放会让"拖框"和"缩框"抢手势，先给一个最常用的 ✓）；
- *  3. 生成时把文档**扩到装得下这个框** ✓（`InfiniteCanvas.expandedToInclude` ✓）——
- *     文档只长成**外接矩形** ✓，**没画到的地方保持透明** ✓ ⇒ 看起来就是"凸出一块"✓
- *     （生成那一步是下一批的活儿 ✓，本文件先把框和几何备好 ✓）。
- *
- * ⚠️ **框用文档坐标**（`AppState.infiniteFrame` ✓）：换成画布像素就会被画布边界夹住 ✗，
- * "把框移到画像外"根本画不出来 ✗。
- *
- * ## 平移 / 缩放（与生图页同一套手感 ✓）
- *
- * · 滚轮 = **以光标为锚点**缩放 ✓（公式与生图页逐字一致 ✓）；
- * · 「按住空格 + 左键」或**中键**拖动 = 平移 ✓（空格**现读** `state.canvasSpacePan` ✓ ——
- *   这个指针协程不会因为重组重启，捕获成局部 `val` 会一直停在旧值 ✗）；
- * · ⚠️ **平移优先**：按着空格 / 中键时，框一步都不动 ✓（不然"想平移"会顺手把框拖走 ✗）。
- */
+/** Fixed-size movable crop frame. The request and paste-back use exactly this rectangle. */
 @Composable
 fun InfiniteCanvasArea(
     state: AppState,
@@ -125,9 +101,7 @@ fun InfiniteCanvasArea(
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
-    var liveContext by remember(state.settings.infiniteContext) {
-        mutableFloatStateOf(state.settings.infiniteContext.toFloat())
-    }
+    var paramsExpanded by remember { mutableStateOf(false) }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val viewW = constraints.maxWidth.toFloat()
@@ -189,7 +163,6 @@ fun InfiniteCanvasArea(
                     }
                 }
                 // ② 用户 2026-09-29（手机）：「默认滑动是拖动或放大缩小画布，双击画布拉框」✓
-                //    单指：框内 = 挪框、右下把手 = 改大小、别处 = **平移画布** ✓；双指 = 缩放 + 平移 ✓；
                 //    双击（第二下按住拖）= 拉新框 ✓；双击不拖 = 以那一点为中心放一个框（沿用当前框尺寸 ✓）。
                 //    仍是**同一个手势节点** ✓（分开挂会出"看得见、抓不着"✗，见旧注释的教训）。
                 .pointerInput(canvas?.width, canvas?.height) {
@@ -205,11 +178,9 @@ fun InfiniteCanvasArea(
                         lastTapUp = 0L
                         var mode = when {
                             doubleTap -> FrameDrag.CREATE
-                            frame != null && v.nearHandle(frame, down.position) -> FrameDrag.RESIZE
                             frame != null && insideFrame(frame, v.toDoc(down.position)) -> FrameDrag.MOVE
                             else -> FrameDrag.PAN
                         }
-                        // `pressDoc` 全程不动（新建的一个角 ✓），`lastDoc` 每帧推进（挪 / 改大小按增量 ✓）
                         val pressDoc = v.toDoc(down.position)
                         var lastDoc = pressDoc
                         var lastPos = down.position
@@ -271,21 +242,13 @@ fun InfiniteCanvasArea(
                                 }
 
                                 FrameDrag.CREATE -> {
-                                    val left = minOf(pressDoc.x, now.x)
-                                    val top = minOf(pressDoc.y, now.y)
-                                    val right = maxOf(pressDoc.x, now.x)
-                                    val bottom = maxOf(pressDoc.y, now.y)
-                                    state.updateInfiniteFrame(
-                                        EditRect(
-                                            x = left.roundToInt(),
-                                            y = top.roundToInt(),
-                                            w = (right - left).roundToInt().coerceAtLeast(1),
-                                            h = (bottom - top).roundToInt().coerceAtLeast(1),
-                                        ).let {
-                                            // 总像素 ≤ 1024×1024（钉住按下那一点 ✓）
-                                            capInfiniteFrameArea(it, keepRight = now.x < pressDoc.x, keepBottom = now.y < pressDoc.y)
-                                        }.let { state.infiniteCanvas?.clampFrame(it) ?: it },
+                                    val size = com.kallan.naistudio.models.InfiniteFrameSizes.nearest(
+                                        state.infiniteFrame?.w ?: state.settings.infiniteFrameW.takeIf { it > 0 } ?: 1024,
+                                        state.infiniteFrame?.h ?: state.settings.infiniteFrameH.takeIf { it > 0 } ?: 1024,
                                     )
+                                    state.updateInfiniteFrame(EditRect(
+                                        (now.x - size.width / 2f).roundToInt(),
+                                        (now.y - size.height / 2f).roundToInt(), size.width, size.height))
                                 }
 
                                 FrameDrag.MOVE -> {
@@ -297,13 +260,6 @@ fun InfiniteCanvasArea(
                                     }
                                 }
 
-                                FrameDrag.RESIZE -> {
-                                    val f = state.infiniteFrame ?: break
-                                    val w = (now.x - f.x).roundToInt().coerceAtLeast(1)
-                                    val h = (now.y - f.y).roundToInt().coerceAtLeast(1)
-                                    // 总像素 ≤ 1024×1024（钉住左上 ✓）
-                                    state.updateInfiniteFrame(capInfiniteFrameArea(f.copy(w = w, h = h)))
-                                }
                             }
                             lastPos = change.position
                             lastDoc = now
@@ -340,7 +296,6 @@ fun InfiniteCanvasArea(
             contentAlignment = Alignment.Center,
         ) {
             if (image != null && drawW > 0f && drawH > 0f) {
-                // 图片按实际缩放尺寸测量；框和上下文在视口层绘制，不能被图片尺寸裁短。
                 Box(
                     Modifier
                         .graphicsLayer {
@@ -363,13 +318,8 @@ fun InfiniteCanvasArea(
                 state.infiniteFrame?.let { frame ->
                     val transform = view.value
                     val frameRect = transform.screenRect(frame)
-                    val cropRect = state.infiniteFramePlan(liveContext.roundToInt())?.let { (grown, plan) ->
-                        val left = (plan.cropX + grown.originX).toFloat()
-                        val top = (plan.cropY + grown.originY).toFloat()
-                        transform.screenRect(Rect(left, top, left + plan.cropW, top + plan.cropH))
-                    }
                     val accent = MaterialTheme.colorScheme.primary
-                    FrameOverlay(frameRect, cropRect, accent)
+                    FrameOverlay(frameRect, accent)
                     Text(
                         "${t("infinite.redrawArea")} ${frame.w} × ${frame.h}",
                         style = MaterialTheme.typography.labelSmall,
@@ -394,12 +344,11 @@ fun InfiniteCanvasArea(
             }
         }
 
-            // 控件与画布手势层平级，拖滑条和输入长宽不会被识别成画框。
-            // 上下文独立放在画布上沿；底部尺寸输入仍会随键盘上移。
+            // 控件与画布手势层平级，选择规格不会触发画布手势。
             // ⚠️ 提示那一行和真正发出去的请求用的是**同一个函数**（`AppState.infiniteFramePlan` ✓）——
             //    界面写一个数、请求发另一个数，是最伤人的那种不一致 ✗（本仓库吃过这个亏 ✓）。
             // ⚠️ 撤销 / 重做**是真按钮**（栈里有货才亮 ✓）—— 亮着点了没反应是最烦的那种坏 ✗。
-            val planText = state.infinitePlanText(liveContext.roundToInt())
+            val planText = state.infinitePlanText()
             val hint = when {
                 state.infiniteRunning -> t("infinite.generating")
                 planText != null -> planText
@@ -438,38 +387,23 @@ fun InfiniteCanvasArea(
                     CanvasChip(text = hint)
                 }
             }
-            ContextSliderChip(
-                label = t("infinite.context"),
-                value = liveContext,
-                enabled = !state.infiniteRunning,
-                onValue = { liveContext = it },
-                onDone = {
-                    val next = liveContext.roundToInt().coerceIn(0, INFINITE_CONTEXT_MAX.toInt())
-                    if (next != state.settings.infiniteContext) {
-                        state.setSettings { it.copy(infiniteContext = next) }
-                    }
-                },
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
-            )
+
+        Column(
+            Modifier.align(Alignment.TopCenter).padding(top = 8.dp)
+                .width(380.dp).heightIn(max = maxHeight * 0.7f)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            InpaintParamsTrigger(t, paramsExpanded, { paramsExpanded = !paramsExpanded })
+            if (paramsExpanded) InpaintParamsPanel(state, t, infinite = true)
+        }
     }
 }
 
-/** 视口层的覆盖图不受图片容器的宽高约束，虚线请求范围才能完整包住重绘框。 */
+/** Draw the fixed crop frame in viewport coordinates. */
 @Composable
-private fun FrameOverlay(frame: Rect, crop: Rect?, accent: Color) {
+private fun FrameOverlay(frame: Rect, accent: Color) {
     Canvas(Modifier.fillMaxSize()) {
-        if (crop != null) {
-            drawRect(accent.copy(alpha = 0.10f), crop.topLeft, crop.size)
-            drawRect(
-                color = accent.copy(alpha = 0.75f),
-                topLeft = crop.topLeft,
-                size = crop.size,
-                style = Stroke(
-                    width = 1.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
-                ),
-            )
-        }
+
         drawRoundRect(
             accent.copy(alpha = 0.18f), frame.topLeft, frame.size,
             cornerRadius = CornerRadius(2.dp.toPx()),
@@ -479,7 +413,6 @@ private fun FrameOverlay(frame: Rect, crop: Rect?, accent: Color) {
             cornerRadius = CornerRadius(2.dp.toPx()),
             style = Stroke(2.dp.toPx()),
         )
-        drawCircle(accent, radius = 9.dp.toPx(), center = frame.bottomRight)
     }
 }
 
@@ -513,45 +446,9 @@ private fun CanvasChip(
     }
 }
 
-@Composable
-private fun ContextSliderChip(
-    label: String,
-    value: Float,
-    enabled: Boolean,
-    onValue: (Float) -> Unit,
-    onDone: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xCC1B1E24))
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = Color(0xFFE6E7EA))
-        Slider(
-            value = value,
-            onValueChange = onValue,
-            onValueChangeFinished = onDone,
-            valueRange = 0f..INFINITE_CONTEXT_MAX,
-            enabled = enabled,
-            modifier = Modifier.width(150.dp),
-        )
-        Text(
-            "${value.roundToInt()} px",
-            style = MaterialTheme.typography.labelMedium,
-            color = Color(0xFFE6E7EA),
-            modifier = Modifier.width(48.dp),
-        )
-    }
-}
 
-/**
- * 「框 宽 × 高」输入胶囊（用户 2026-09-29：「可自己设置拉框的长宽」✓）。
- * 回车 / 离开输入框时才提交 ✓（边打边改会把"1"当成 64 立刻套上去 ✗）；以框中心为准、总像素 ≤ 1024×1024 ✓。
- */
+
+/** Select a fixed free-size preset. */
 @Composable
 private fun FrameSizeChip(
     state: AppState,
@@ -560,69 +457,25 @@ private fun FrameSizeChip(
     background: Color,
     textColor: Color,
 ) {
-    var wText by remember(frame.w) { mutableStateOf(frame.w.toString()) }
-    var hText by remember(frame.h) { mutableStateOf(frame.h.toString()) }
-    fun commit(keepWidth: Boolean) {
-        val w = wText.toIntOrNull()
-        val h = hText.toIntOrNull()
-        if (w != null && h != null && (w != frame.w || h != frame.h)) {
-            state.setInfiniteFrameSize(w, h, keepWidth)
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        CanvasChip(text = "$label ${frame.w} × ${frame.h} ▾",
+            enabled = !state.infiniteRunning, onClick = { expanded = true })
+        androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            com.kallan.naistudio.models.InfiniteFrameSizes.presets.forEach { size ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("${size.width} × ${size.height}") },
+                    onClick = {
+                        state.setInfiniteFrameSize(size.width, size.height, true)
+                        expanded = false
+                    },
+                )
+            }
         }
-        val now = state.infiniteFrame ?: frame
-        wText = now.w.toString()
-        hText = now.h.toString()
-    }
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(background)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = textColor)
-        FrameSizeField(wText, { wText = it }, { commit(true) }, textColor)
-        Text("×", style = MaterialTheme.typography.labelMedium, color = textColor)
-        FrameSizeField(hText, { hText = it }, { commit(false) }, textColor)
     }
 }
 
-@Composable
-private fun FrameSizeField(
-    value: String,
-    onValue: (String) -> Unit,
-    onCommit: () -> Unit,
-    textColor: Color,
-) {
-    val focus = LocalFocusManager.current
-    var focused by remember { mutableStateOf(false) }
-    BasicTextField(
-        value = value,
-        onValueChange = { onValue(it.filter(Char::isDigit).take(4)) },
-        singleLine = true,
-        textStyle = MaterialTheme.typography.labelMedium.copy(color = textColor, textAlign = TextAlign.Center),
-        cursorBrush = SolidColor(textColor),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
-        modifier = Modifier
-            .width(46.dp)
-            .onFocusChanged {
-                if (focused && !it.isFocused) onCommit()
-                focused = it.isFocused
-            }
-            .onPreviewKeyEvent {
-                if (it.key == Key.Enter || it.key == Key.NumPadEnter) {
-                    if (it.type == KeyEventType.KeyUp) focus.clearFocus()
-                    true
-                } else {
-                    false
-                }
-            }
-            .clip(RoundedCornerShape(4.dp))
-            .background(textColor.copy(alpha = 0.10f))
-            .padding(horizontal = 4.dp, vertical = 3.dp),
-    )
-}
+
 
 /** 这一点在不在框里（**文档坐标** ✓）。 */
 private fun insideFrame(frame: EditRect, point: Offset): Boolean =
@@ -680,10 +533,4 @@ private class ViewTransform(
         contentTop + (rect.bottom - originY) * k,
     )
 
-    /** 这一点在不在"右下角把手"上 ✓（命中半径按**屏幕 px** 算 ✓ —— 画布缩得再小也点得着 ✓）。 */
-    fun nearHandle(frame: EditRect, position: Offset): Boolean {
-        val hx = contentLeft + (frame.x + frame.w - originX) * k
-        val hy = contentTop + (frame.y + frame.h - originY) * k
-        return abs(position.x - hx) <= FRAME_HANDLE_HIT && abs(position.y - hy) <= FRAME_HANDLE_HIT
-    }
 }

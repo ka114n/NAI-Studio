@@ -41,6 +41,20 @@ import javax.crypto.spec.GCMParameterSpec
 fun androidPlatform(context: Context): Platform {
     val app = context.applicationContext
     return object : Platform {
+        override fun openTagLexicon(file: File): com.kallan.naistudio.models.SqlTagLexicon {
+            val database = android.database.sqlite.SQLiteDatabase.openDatabase(file.absolutePath, null,
+                android.database.sqlite.SQLiteDatabase.OPEN_READONLY)
+            try {
+                return com.kallan.naistudio.models.SqlTagLexicon { sql, args ->
+                    database.rawQuery(sql, args.toTypedArray()).use { cursor ->
+                        buildList {
+                            while (cursor.moveToNext()) add((0 until cursor.columnCount).map { cursor.getString(it).orEmpty() })
+                        }
+                    }
+                }
+            } catch (error: Exception) { database.close(); throw error }
+        }
+
         override val kv: KeyValueStore = PrefsKeyValueStore(
             app.getSharedPreferences(PREFS_STORE, Context.MODE_PRIVATE),
         )

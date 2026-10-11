@@ -85,7 +85,8 @@ interface UiHost {
      * 盖住外壳这一层的（见 `StudioShell` 里那段注释）。
      */
     @Composable
-    fun backHandler(enabled: Boolean = true, onBack: () -> Unit)
+    // Keep defaults at call sites: composable virtual defaults can produce mismatched JVM bridges on incremental builds.
+    fun backHandler(enabled: Boolean, onBack: () -> Unit)
 
     /**
      * 退出应用。

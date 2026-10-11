@@ -1,0 +1,9 @@
+# Expanded-canvas preview resolution
+
+Phone ordinary preview previously always decoded the image to at most 1440 pixels, and the fullscreen viewer used 2048 pixels regardless of zoom. Large saved canvas composites therefore lost detail before being enlarged. Android power-of-two sampling also chose a step below the requested resolution (for example, 2000 pixels requested at 1440 became only 1000).
+
+Ordinary file previews and fullscreen viewers now choose stable resolution buckets from original dimensions, viewport size and zoom. Resolution never exceeds source size; decoding is bounded to 16 megapixels and 8192 on the longest edge. Android sampling retains enough source detail before filtered resizing, except where the memory budget requires a lower sample. Extremely large composites can still be sampled; this is not a tiled, unlimited-resolution viewer.
+
+File image state is keyed by source path so a new composite cannot display the previous image while decoding. Phone preview zoom and offset reset synchronously when the source path changes. Desktop's existing shared canvas bitmap display is retained; its file fallback and fullscreen viewer use the same adaptive policy.
+
+Verification (2026-10-04): Android unit tests and release assembly passed (550 tests, zero failures/errors/skips). Signed release 1.1.161 was installed successfully and its installed version confirmed. Desktop `test desktopInput --no-daemon` passed (559 tests, 6 skipped, zero failures/errors). Real-device visual validation remains manual. Manual validation: extend a canvas beyond 1440 pixels, switch to ordinary mode, confirm fitted initial display, pinch/zoom to inspect original details, then open another image and confirm no stale image or zoom carries over on phone. No generation parameters or saved image bytes change.

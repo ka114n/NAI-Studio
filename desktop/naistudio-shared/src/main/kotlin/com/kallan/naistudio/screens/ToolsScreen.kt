@@ -42,6 +42,8 @@ import com.kallan.naistudio.models.ToolCatalog
 import com.kallan.naistudio.platform.LocalUiHost
 import com.kallan.naistudio.services.PromptRules
 import com.kallan.naistudio.state.AppState
+import com.kallan.naistudio.ui.desktopImageDropTarget
+import com.kallan.naistudio.ui.ToolImageImportPreview
 import com.kallan.naistudio.ui.FileImage
 import com.kallan.naistudio.ui.SectionCard
 import com.kallan.naistudio.ui.SegmentedCapsule
@@ -115,11 +117,18 @@ internal fun ToolContent(toolId: String, state: AppState) {
         else -> Column(
             Modifier
                 .fillMaxSize()
+                .then(if (currentTool.id == ToolCatalog.METADATA || currentTool.id == ToolCatalog.REVERSE) {
+                    Modifier.desktopImageDropTarget(state.settings.language) { path ->
+                        if (currentTool.id == ToolCatalog.METADATA) state.selectMetadataImage(path)
+                        else state.selectReverseImage(path)
+                    }
+                } else Modifier)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (currentTool.id) {
+                ToolCatalog.DICTIONARY -> TagDictionaryTool(state)
                 ToolCatalog.METADATA -> MetadataTool(
                     state = state,
                     t = t,
@@ -183,6 +192,7 @@ private fun MetadataTool(
         ) {
             OutlinedButton(
                 onClick = pick,
+                enabled = !state.reverseBusy,
                 shape = RoundedCornerShape(50),
                 modifier = Modifier.weight(1f),
             ) {
@@ -198,23 +208,11 @@ private fun MetadataTool(
             }
         }
 
-        state.metadataImagePath?.let { path ->
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                contentAlignment = Alignment.Center,
-            ) {
-                FileImage(
-                    path = path,
-                    maxDimension = 1024,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
-                )
-            }
-        }
+        ToolImageImportPreview(
+            path = state.metadataImagePath,
+            hint = t("drop.toolImageHint"),
+            onPick = pick,
+        )
 
         when {
             state.metadataBusy -> Row(
@@ -385,10 +383,24 @@ private fun ReversePromptTool(
 
     SectionCard(t("reverse.title")) {
         Text(
-            t("reverse.hint"),
+            if (state.reverseLocal) t("reverse.local.hint") else t("reverse.hint"),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        if (state.localReverseAvailable) {
+            SegmentedCapsule(
+                options = listOf(NaiOption(t("reverse.online"), "online"), NaiOption(t("reverse.local"), "local")),
+                selected = if (state.reverseLocal) "local" else "online",
+                onSelect = { state.chooseReverseLocal(it == "local") },
+            )
+            Text(
+                t("reverse.local.download"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
 
         // 选图：选过之后按钮变「换一张」，右边跟一个「清除」
         Row(
@@ -407,50 +419,42 @@ private fun ReversePromptTool(
                 )
             }
             if (state.reverseImagePath != null) {
-                TextButton(onClick = { state.clearReverseImage() }) {
+                TextButton(enabled = !state.reverseBusy, onClick = { state.clearReverseImage() }) {
                     Text(t("reverse.clear"))
                 }
             }
         }
 
-        // 预览：等宽方块，圆角裁掉
-        state.reverseImagePath?.let { path ->
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                contentAlignment = Alignment.Center,
-            ) {
-                FileImage(
-                    path = path,
-                    maxDimension = 1024,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
-                )
-            }
-        }
-
-        // 反推模式：和「设置 → 提示词优化与反推规则」里的反推模式是同一个值
-        Text(t("reverse.mode"), style = MaterialTheme.typography.labelLarge)
-        SegmentedCapsule(
-            options = PromptRules.MODES.map { mode ->
-                NaiOption(
-                    when (mode) {
-                        PromptRules.MODE_NATURAL -> t("mode.natural")
-                        PromptRules.MODE_MIXED -> t("mode.mixed")
-                        else -> t("mode.tag")
-                    },
-                    mode,
-                )
-            },
-            selected = state.settings.reverseRuleMode,
-            onSelect = { value -> state.setSettings { it.copy(reverseRuleMode = value) } },
+        // Bounded dashed preview fits the entire image at its original aspect ratio.
+        ToolImageImportPreview(
+            path = state.reverseImagePath,
+            hint = t("drop.toolImageHint"),
+            onPick = pick,
         )
 
+        if (!state.reverseLocal) {
+            // 反推模式：和「设置 → 提示词优化与反推规则」里的反推模式是同一个值
+            Text(t("reverse.mode"), style = MaterialTheme.typography.labelLarge)
+            SegmentedCapsule(
+                options = PromptRules.MODES.map { mode ->
+                    NaiOption(
+                        when (mode) {
+                            PromptRules.MODE_NATURAL -> t("mode.natural")
+                            PromptRules.MODE_MIXED -> t("mode.mixed")
+                            else -> t("mode.tag")
+                        },
+                        mode,
+                    )
+                },
+                selected = state.settings.reverseRuleMode,
+                onSelect = { value -> state.setSettings { it.copy(reverseRuleMode = value) } },
+            )
+        }
+
         Button(
-            onClick = { state.runReverseForTool() },
+            onClick = {
+                if (state.reverseLocal) state.runLocalReverseForTool() else state.runReverseForTool()
+            },
             shape = RoundedCornerShape(50),
             enabled = state.reverseImagePath != null && !state.reverseBusy,
             modifier = Modifier.fillMaxWidth(),
@@ -462,9 +466,15 @@ private fun ReversePromptTool(
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(t("reverse.running"))
+                Text(if (state.reverseLocal) state.reverseLocalProgress else t("reverse.running"))
             } else {
-                Text(t("reverse.start"))
+                Text(if (state.reverseLocal) t("reverse.local.start") else t("reverse.start"))
+            }
+        }
+
+        if (state.reverseBusy && state.reverseLocal) {
+            TextButton(onClick = { state.cancelLocalReverse() }, modifier = Modifier.fillMaxWidth()) {
+                Text(t("reverse.local.cancel"))
             }
         }
 

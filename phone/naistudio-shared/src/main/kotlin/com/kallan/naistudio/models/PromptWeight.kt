@@ -37,7 +37,7 @@ data class PromptWeightSpan(
 /**
  * NovelAI 提示词的**加强 / 削弱**解析。
  *
- * ## 规则（照抄官方文档，别凭直觉改）
+ * ## 规则（与官方文档一致，别凭直觉改）
  *
  * 官方那句最容易看错的话是：
  *
@@ -74,12 +74,52 @@ object PromptWeight {
     /** 浮点比较容差。1.05 累乘几层误差很小，1e-9 足够。 */
     private const val EPS = 1e-9
 
+    /** Keep a numeric tag ending separate from NAI's numeric weight opener syntax. */
+    fun closingSuffix(body: CharSequence, suffix: String): String =
+        if (suffix.startsWith("::") && body.lastOrNull()?.isDigit() == true) " $suffix" else suffix
+
+    /** Preserve free-form translation output; only insert spaces at known weight closers. */
+    fun separateNumericTagClosings(text: String): String {
+        val positions = closingMarkers(text).map { it.first }.filter { it > 0 && text[it - 1].isDigit() }
+        if (positions.isEmpty()) return text
+        return buildString(text.length + positions.size) {
+            var start = 0
+            for (position in positions) {
+                append(text, start, position)
+                append(' ')
+                start = position
+            }
+            append(text, start, text.length)
+        }
+    }
+
     /** 权重 → 档位。**只有这一处定义"多深算强"**。 */
     fun kindOf(weight: Double): PromptWeightKind = when {
         weight < -EPS -> PromptWeightKind.NEGATIVE
         weight > 1.0 + EPS -> PromptWeightKind.STRONG
         weight < 1.0 - EPS -> PromptWeightKind.WEAK
         else -> PromptWeightKind.NORMAL
+    }
+
+    /** Bare :: that closes an active numeric weight, excluding openers and stray delimiters. */
+    fun closingMarkers(text: String): List<IntRange> {
+        val result = mutableListOf<IntRange>()
+        var active = false
+        var i = 0
+        while (i + 1 < text.length) {
+            if (text.startsWith("::", i)) {
+                var start = i
+                while (start > 0 && (text[start - 1].isDigit() || text[start - 1] == '.' || text[start - 1] == '-')) start--
+                val standalone = start == 0 || text[start - 1].isWhitespace() || text[start - 1] == ','
+                if (standalone && text.substring(start, i).toDoubleOrNull() != null) active = true
+                else {
+                    if (active) result += i until i + 2
+                    active = false
+                }
+                i += 2
+            } else i++
+        }
+        return result
     }
 
     /**

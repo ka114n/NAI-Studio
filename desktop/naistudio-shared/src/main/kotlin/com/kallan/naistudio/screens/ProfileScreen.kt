@@ -22,7 +22,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
+import com.kallan.naistudio.ui.RefSwitch as Switch
 import androidx.compose.material3.Surface
 import kotlin.math.roundToInt
 import androidx.compose.material3.MaterialTheme
@@ -148,6 +148,7 @@ fun ProfileScreen(state: AppState) {
             StudioButton(
                 onClick = { exportLauncher.launch(profileBackupFileNameNow()) },
                 enabled = !state.busy,
+                fullWidth = false,
                 kind = StudioButtonKind.Secondary,
             ) { Text(t("backup.export")) }
         },
@@ -320,12 +321,14 @@ private fun ProfileHero(state: AppState, t: (String) -> String, compact: Boolean
                     onClick = { if (loggedIn) state.refreshQuota() else state.beginLogin() },
                     enabled = !state.authBusy,
                     modifier = modifier,
+                    fullWidth = false,
                     kind = StudioButtonKind.Primary,
                 ) { Text(if (loggedIn) t("account.refresh") else t("account.login")) }
             } else if (state.hasToken) {
                 StudioButton(
                     onClick = { state.refreshAnlas() },
                     modifier = modifier,
+                    fullWidth = false,
                     kind = StudioButtonKind.Primary,
                 ) { Text(t("account.refresh")) }
             }
@@ -423,11 +426,13 @@ private fun LlmApiCard(state: AppState, t: (String) -> String) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     SectionCard(t("llm.title")) {
         // 收起时的摘要：有没有配好、翻译走的哪个后端
-        val configured = settings.llmApiUrl.isNotBlank() && settings.llmApiKey.isNotBlank()
-        val serviceName = if (settings.translateService == "baidu") {
-            t("llm.translateByBaidu")
-        } else {
-            t("llm.translateByLlm")
+        val configured = when (settings.translateService) {
+            "baidu" -> settings.baiduTranslateAppId.isNotBlank() && settings.baiduTranslateSecret.isNotBlank()
+            else -> settings.llmApiUrl.isNotBlank() && settings.llmApiKey.isNotBlank()
+        }
+        val serviceName = when (settings.translateService) {
+            "baidu" -> t("llm.translateByBaidu")
+            else -> t("llm.translateByLlm")
         }
         Row(
             Modifier
@@ -438,7 +443,8 @@ private fun LlmApiCard(state: AppState, t: (String) -> String) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (configured) "${settings.llmModel} · $serviceName" else t("llm.notConfiguredShort"),
+                if (!configured) "$serviceName · ${t("llm.notConfiguredShort")}"
+                else if (settings.translateService == "llm") "${settings.llmModel} · $serviceName" else serviceName,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (configured) {
                     MaterialTheme.colorScheme.onSurface

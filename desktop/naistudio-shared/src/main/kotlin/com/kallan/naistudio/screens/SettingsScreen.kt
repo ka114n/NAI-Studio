@@ -34,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -100,6 +102,8 @@ fun SettingsScreen(state: AppState) {
     }
 
     // 每一栏都能"收纳"（用户要求全部可折叠），分别记住展开状态
+    val clipboard = LocalClipboardManager.current
+    var pairingOpen by rememberSaveable { mutableStateOf(false) }
     var storageOpen by rememberSaveable { mutableStateOf(false) }
     var generateOpen by rememberSaveable { mutableStateOf(false) }
     var persistOpen by rememberSaveable { mutableStateOf(false) }
@@ -138,6 +142,23 @@ fun SettingsScreen(state: AppState) {
     }
 
     StudioPageContainer(title = t("settings.title")) {
+        CollapsibleSectionCard(
+            title = t("settings.reversePairing"),
+            expanded = pairingOpen,
+            onToggle = { pairingOpen = !pairingOpen },
+        ) {
+            if (state.reverseSharingAvailable) {
+                OutlinedButton(onClick = { state.toggleReverseSharing() }, enabled = !state.reverseShareBusy, modifier = Modifier.fillMaxWidth()) {
+                    Text(t(if (state.reverseShareBusy) "reverse.share.wait" else if (state.reverseShareInfo == null) "reverse.share.start" else "reverse.share.stop"))
+                }
+                Text(t("reverse.share.hint"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                state.reverseShareInfo?.let { info ->
+                    Text(info.address, style = MaterialTheme.typography.bodySmall, color = com.kallan.naistudio.ui.NaiSkinTokens.text())
+                    TextButton(onClick = { clipboard.setText(AnnotatedString(info.address)) }) { Text(t("reverse.share.copyAddress")) }
+                    TextButton(onClick = { clipboard.setText(AnnotatedString(info.pairingCode)) }) { Text(t("reverse.share.copyCode")) }
+                }
+            }
+        }
         CollapsibleSectionCard(
             title = t("settings.storage"),
             expanded = storageOpen,
@@ -216,6 +237,13 @@ fun SettingsScreen(state: AppState) {
                 checked = settings.streamPreviewEnabled,
                 onCheckedChange = { value -> state.setSettings { it.copy(streamPreviewEnabled = value) } },
             )
+            Text(t("upscale.providerTitle"), style = MaterialTheme.typography.labelMedium)
+            SegmentedCapsule(
+                options = listOf(NaiOption(t("upscale.providerOfficial"), "official"), NaiOption(t("upscale.providerRtx"), "rtx")),
+                selected = settings.upscaleProvider,
+                onSelect = { value -> state.setSettings { it.copy(upscaleProvider = value) } },
+            )
+            Text(t("upscale.providerRtxHint"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // 官方 2× 放大：付费接口，默认关；提示里明确写清消耗与"编辑仍用放大前那张"
             SwitchRow(
                 label = t("upscale.settingAuto"),

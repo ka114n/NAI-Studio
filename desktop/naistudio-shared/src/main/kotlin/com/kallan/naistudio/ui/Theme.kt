@@ -617,6 +617,7 @@ fun NaiStudioTheme(
                 strong = if (dark) Color(0xFFFF8A3D) else Color(0xFFB34700),
                 weak = if (dark) Color(0xFF4E9BFF) else Color(0xFF1565C0),
                 negative = colorScheme.error,
+                closing = if (dark) Color(0xFF62D68B) else Color(0xFF237D45),
             ),
             content = content,
         )
@@ -856,6 +857,8 @@ data class PromptHighlightColors(
     val weak: Color,
     /** `-1::x ::` 负加权：跟错误色走。 */
     val negative: Color,
+    /** Numeric weight closing ::, distinct from the weighted content. */
+    val closing: Color = Color(0xFF237D45),
 )
 
 /** 加强档的暖色：暗底要亮、亮底要深，否则总有一边看不清。 */

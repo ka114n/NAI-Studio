@@ -158,6 +158,11 @@ object DefaultPenInputKey
  * 收成一个而不是散着传，是为了**以后加能力不用改构造签名**。
  */
 interface Platform {
+    /** Open the packaged read-only tag store, after background extraction. */
+    fun openTagLexicon(file: File): com.kallan.naistudio.models.SqlTagLexicon? = null
+    val taggerSharing: TaggerSharing? get() = null
+    val localImageTagger: LocalImageTagger? get() = null
+
     val kv: KeyValueStore
     val secrets: SecretStore
     val paths: AppPaths

@@ -204,6 +204,11 @@ data class AppSettings(
      * 锁上之后照样可以随手编辑。这里这三个是"**改不了**"，锁是钉死的。
      * 两组名字必须能一眼分开，所以特意用了 `promptLock*` 这个前缀。
      */
+    /** User dictionary is included in settings backups; downloaded dictionaries stay in cache. */
+    val customTagDictionaryJson: String = "{}",
+    val deletedTagDictionaryJson: String = "[]",
+    val overriddenTagDictionaryJson: String = "[]",
+    val positiveTagCardMode: Boolean = false,
     val promptLockStyle: Boolean = false,
     val promptLockPositive: Boolean = false,
     val promptLockNegative: Boolean = false,
@@ -229,6 +234,8 @@ data class AppSettings(
      * 而图生图 / 遮罩重绘仍然用**放大前**的那张（坐标口径不变）。
      */
     val officialUpscaleAfterGenerate: Boolean = false,
+    /** 2× 图像放大来源：NovelAI 官方或 RTX VFX（本机 / 配对电脑）。 */
+    val upscaleProvider: String = "official",
 
     // 以下为后续里程碑（重绘/超分/Director）的参数，先按参考实现的默认值声明
     val inpaintModel: String = "nai-diffusion-5-full-inpainting",
@@ -439,6 +446,7 @@ data class AppSettings(
 
     /** 翻译用哪个后端：`"llm"` = 上面的 LLM 接口；`"baidu"` = 百度翻译 API。 */
     val translateService: String = "llm",
+    val translateFuzzyMatching: Boolean = false,
     // ---- 百度翻译（translateService = "baidu" 时用）----
     val baiduTranslateAppId: String = "",
     val baiduTranslateSecret: String = "",
@@ -547,6 +555,10 @@ data class AppSettings(
         put("lockNegativePrompt", lockNegativePrompt)
         put("savedStylePrompt", savedStylePrompt)
         put("savedNegativePrompt", savedNegativePrompt)
+        put("customTagDictionaryJson", customTagDictionaryJson)
+        put("deletedTagDictionaryJson", deletedTagDictionaryJson)
+        put("overriddenTagDictionaryJson", overriddenTagDictionaryJson)
+        put("positiveTagCardMode", positiveTagCardMode)
         put("promptLockStyle", promptLockStyle)
         put("promptLockPositive", promptLockPositive)
         put("promptLockNegative", promptLockNegative)
@@ -557,6 +569,7 @@ data class AppSettings(
         put("persistUpscaleParams", persistUpscaleParams)
         put("persistDirectorParams", persistDirectorParams)
         put("officialUpscaleAfterGenerate", officialUpscaleAfterGenerate)
+        put("upscaleProvider", upscaleProvider)
         put("inpaintModel", inpaintModel)
         put("inpaintStrength", inpaintStrength)
         put("inpaintNoise", inpaintNoise)
@@ -643,6 +656,7 @@ data class AppSettings(
         put("llmReverseApiKey", llmReverseApiKey)
         put("llmReverseModel", llmReverseModel)
         put("translateService", translateService)
+        put("translateFuzzyMatching", translateFuzzyMatching)
         put("baiduTranslateAppId", baiduTranslateAppId)
         put("baiduTranslateSecret", baiduTranslateSecret)
         put("optimizeRuleMode", optimizeRuleMode)
@@ -851,6 +865,10 @@ data class AppSettings(
                 lockNegativePrompt = json.optBoolean("lockNegativePrompt", defaults.lockNegativePrompt),
                 savedStylePrompt = json.optString("savedStylePrompt", defaults.savedStylePrompt),
                 savedNegativePrompt = json.optString("savedNegativePrompt", defaults.savedNegativePrompt),
+                customTagDictionaryJson = json.optString("customTagDictionaryJson", defaults.customTagDictionaryJson),
+                deletedTagDictionaryJson = json.optString("deletedTagDictionaryJson", defaults.deletedTagDictionaryJson),
+                overriddenTagDictionaryJson = json.optString("overriddenTagDictionaryJson", defaults.overriddenTagDictionaryJson),
+                positiveTagCardMode = json.optBoolean("positiveTagCardMode", defaults.positiveTagCardMode),
                 promptLockStyle = json.optBoolean("promptLockStyle", defaults.promptLockStyle),
                 promptLockPositive = json.optBoolean("promptLockPositive", defaults.promptLockPositive),
                 promptLockNegative = json.optBoolean("promptLockNegative", defaults.promptLockNegative),
@@ -865,6 +883,7 @@ data class AppSettings(
                     "officialUpscaleAfterGenerate",
                     defaults.officialUpscaleAfterGenerate,
                 ),
+                upscaleProvider = json.optString("upscaleProvider", defaults.upscaleProvider).takeIf { it in setOf("official", "rtx") } ?: "official",
                 inpaintModel = json.optString("inpaintModel", defaults.inpaintModel),
                 inpaintStrength = finiteClamp(
                     json.optDouble("inpaintStrength", defaults.inpaintStrength), 0.0, 1.0, 1.0,
@@ -992,8 +1011,12 @@ data class AppSettings(
             llmReverseModel = json.optString("llmReverseModel", defaults.llmReverseModel),
             translateService = when (json.optString("translateService", defaults.translateService)) {
                 "baidu" -> "baidu"
+                // Retired local Google backend: prefer an existing Baidu configuration.
+                "google" -> if (json.optString("baiduTranslateAppId").isNotBlank() &&
+                    json.optString("baiduTranslateSecret").isNotBlank()) "baidu" else "llm"
                 else -> "llm"
             },
+            translateFuzzyMatching = json.optBoolean("translateFuzzyMatching", defaults.translateFuzzyMatching),
             baiduTranslateAppId = json.optString("baiduTranslateAppId", defaults.baiduTranslateAppId),
             baiduTranslateSecret = json.optString("baiduTranslateSecret", defaults.baiduTranslateSecret),
             optimizeRuleMode = PromptRules.MODES.firstOrNull {

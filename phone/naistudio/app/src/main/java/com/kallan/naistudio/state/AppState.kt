@@ -20,7 +20,6 @@ import com.kallan.naistudio.BuildConfig
 import com.kallan.naistudio.platform.logWarn
 import com.kallan.naistudio.i18n.RuntimeText
 import com.kallan.naistudio.models.AnlasCost
-import com.kallan.naistudio.models.TagDictionary
 import com.kallan.naistudio.models.AppSettings
 import com.kallan.naistudio.models.BackupCodec
 // ---- 画布编辑器（2026-09-16 从电脑线 `naistudio-shared` 的 AppState 搬过来）----
@@ -83,6 +82,7 @@ import com.kallan.naistudio.models.NaiText
 import com.kallan.naistudio.models.PixelMask
 import com.kallan.naistudio.models.PromptField
 import com.kallan.naistudio.models.PromptTranslate
+import com.kallan.naistudio.models.PromptWeight
 import com.kallan.naistudio.models.promptOf
 import com.kallan.naistudio.models.withPrompt
 import com.kallan.naistudio.models.StylePreset
@@ -131,6 +131,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -1093,18 +1095,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
                 restoreInfiniteCanvasState()
                 // 安装包自带的那份上下文：默认加载（读盘/解析都在 IO 里，见函数注释）
                 loadBundledLlmContext()
-                // **提示词词典**（用户 2026-09-24：「补充词典库」✓）——
-                // 打包在共用树的 `src/main/resources/dictionary.tsv` ✓（39,577 条 ✓，
-                // 见 `models/TagDictionary.kt` ✓，两个 `build.gradle.kts` 里各配了一条 `resources.srcDir` ✓）。
-                // ⚠️ 后台读 + 解析 ✓（十几 MB 文本扫一遍 ✓，主线程做会卡首帧 ✗）；
-                // 读不到就保持**空表** ✓（补全整个不出现 ✓，**不是崩溃** ✗）。
-                runCatching {
-                    val raw = withContext(Dispatchers.IO) {
-                        javaClass.getResourceAsStream("/dictionary.tsv")
-                            ?.use { it.readBytes().toString(Charsets.UTF_8) }
-                    }
-                    if (raw != null) tagDictionary = TagDictionary.parse(raw)
-                }
+
                 // 记忆读回来（用户 2026-09-18：重启不要重置记忆）
                 loadLlmMemory()
                 status = rt(RuntimeText.READY)
@@ -1447,7 +1438,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
         val key = PromptField.stackKey(field)
         val undo = stackOf(promptUndo, key)
         if (undo.isEmpty()) return
-        stackOf(promptRedo, key).addLast(if (PromptField.isPlot(key)) comicPlot else params.promptOf(key))
+        stackOf(promptRedo, key).addLast(promptTextFor(key))
         val previous = undo.removeLast()
         // 置 0：撤销之后的第一次输入必须**另起一步**，不能被合并窗口吞掉
         lastPromptEditAt[key] = 0L
@@ -1460,12 +1451,28 @@ class AppState(app: Application) : AndroidViewModel(app) {
         val key = PromptField.stackKey(field)
         val redo = stackOf(promptRedo, key)
         if (redo.isEmpty()) return
-        stackOf(promptUndo, key).addLast(if (PromptField.isPlot(key)) comicPlot else params.promptOf(key))
+        stackOf(promptUndo, key).addLast(promptTextFor(key))
         val next = redo.removeLast()
         lastPromptEditAt[key] = 0L
         syncPromptUndoState(key)
         applyPromptText(key, next)
     }
+
+    private fun promptTextFor(field: String): String = when {
+        PromptField.isPlot(field) -> comicPlot
+
+        PromptField.isChar(field) -> {
+            val item = extras.activeItems.getOrNull(PromptField.charIndex(field))
+            when {
+                item == null -> ""
+                PromptField.charNegative(field) -> item.negativePrompt
+                else -> item.prompt
+            }
+        }
+
+        else -> params.promptOf(field)
+    }
+
 
     private fun applyPromptText(field: String, text: String) {
         if (PromptField.isPlot(field)) {
@@ -1476,6 +1483,15 @@ class AppState(app: Application) : AndroidViewModel(app) {
                 comicPlot = text
             } finally {
                 comicPlotUndoSuspended = false
+            }
+            return
+        }
+        if (PromptField.isChar(field)) {
+            // 角色 / 分镜格子：走 updateCharacter（它自己不记撤销，正是这里要的）
+            val index = PromptField.charIndex(field)
+            val negative = PromptField.charNegative(field)
+            updateCharacter(index) {
+                if (negative) it.copy(negativePrompt = text) else it.copy(prompt = text)
             }
             return
         }
@@ -1874,7 +1890,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
         if (list.size >= params.maxCharacterPrompts) return
         // 默认名字与节点一致：角色 N / 格 N（之后可以点击改名）
         val name = if (extras.comicMode) "格 ${list.size + 1}" else "角色 ${list.size + 1}"
-        extras = extras.withActiveItems(list + CharCaptionItem(name = name))
+        extras = extras.withActiveItems(list + CharCaptionItem(name = name, expanded = true))
         markCharacterChanged()
     }
 
@@ -1882,6 +1898,21 @@ class AppState(app: Application) : AndroidViewModel(app) {
      * 从角色图鉴「建一个新角色分区」：名字用角色名、提示词用那串可直接用的 trigger。
      * （生成页「角色」栏里那枚角色图鉴按钮点角色名时用它。漫画模式下同样落到分格列表。）
      */
+    /** Explicitly selected local dictionary candidate; only classified character tags are accepted. */
+    fun addCharacterFromDictionary(match: com.kallan.naistudio.models.UserTagDictionary.Match): Boolean {
+        if (bilingualTagDictionary.primary?.entry(match.tag)?.category != com.kallan.naistudio.models.SqlTagLexicon.CHARACTER_CATEGORY) return false
+        val list = extras.activeItems
+        if (list.size >= params.maxCharacterPrompts) {
+            toast(rt("char.limitReached"))
+            return false
+        }
+        val name = match.translations.firstOrNull { it.isNotBlank() } ?: match.tag
+        extras = extras.withActiveItems(list + CharCaptionItem(name = name, prompt = match.tag, expanded = true))
+        markCharacterChanged()
+        toast(rf("char.createdFromAnima", mapOf("name" to name)))
+        return true
+    }
+
     fun addCharacterFromAnima(character: AnimaCharacter) {
         val list = extras.activeItems
         if (list.size >= params.maxCharacterPrompts) {
@@ -1889,7 +1920,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
             return
         }
         extras = extras.withActiveItems(
-            list + CharCaptionItem(name = character.name, prompt = character.trigger),
+            list + CharCaptionItem(name = character.name, prompt = character.trigger, expanded = true),
         )
         markCharacterChanged()
         toast(rf("char.createdFromAnima", mapOf("name" to character.name)))
@@ -2514,6 +2545,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshAnlas() {
+        if (usingGateway) refreshGatewayQuota()
         viewModelScope.launch {
             val token = effectiveToken()
             if (token.isEmpty()) {
@@ -2800,61 +2832,34 @@ class AppState(app: Application) : AndroidViewModel(app) {
      * 传 null = 放大"当前工作图"（放大版会继续回落到放大前，不会越放越小）。
      */
     fun officialUpscale(path: String? = null) {
-        if (busy) {
-            toast(rt("status.busyPleaseWait"), isError = true)
-            return
-        }
+        if (busy) { toast(rt("status.busyPleaseWait"), isError = true); return }
         val sourcePath = path ?: workImagePath
-        if (sourcePath == null) {
-            toast(rt("upscale.needImage"), isError = true)
-            return
-        }
-        val token = effectiveToken()
-        if (token.isEmpty()) {
-            toast(rt("error.tokenRequired"), isError = true)
-            return
-        }
+        if (sourcePath == null) { toast(rt("upscale.needImage"), isError = true); return }
+        val rtx = settings.upscaleProvider == "rtx"
+        if (rtx && (reverseRemoteAddress.isBlank() || reverseRemoteCode.isBlank())) { toast(rt("upscale.pairRequired"), isError = true); return }
+        val token = if (rtx) "" else effectiveToken()
+        if (!rtx && token.isEmpty()) { toast(rt("error.tokenRequired"), isError = true); return }
         val dims = MaskCodec.imageSize(sourcePath)
-        if (dims == null) {
-            toast(rt("error.inpaintSourceMissing"), isError = true)
-            return
-        }
-        val price = OfficialUpscale.price(dims.first, dims.second)
+        if (dims == null) { toast(rt("error.inpaintSourceMissing"), isError = true); return }
+        if (rtx && dims.first.toLong() * dims.second > 4_000_000) { toast(rt("upscale.rtxTooLarge"), isError = true); return }
+        val price = if (rtx) 0 else OfficialUpscale.price(dims.first, dims.second)
         if (price == null) {
-            toast(
-                rf(
-                    "upscale.tooLarge",
-                    mapOf(
-                        "w" to dims.first,
-                        "h" to dims.second,
-                        "max" to OfficialUpscale.MAX_INPUT_PIXELS,
-                    ),
-                ),
-                isError = true,
-            )
+            toast(rf("upscale.tooLarge", mapOf("w" to dims.first, "h" to dims.second, "max" to OfficialUpscale.MAX_INPUT_PIXELS)), isError = true)
             return
         }
-
         viewModelScope.launch {
             busy = true
-            status = rf("upscale.running", mapOf("cost" to price))
+            status = if (rtx) rt("upscale.rtxRunning") else rf("upscale.running", mapOf("cost" to price))
             try {
-                val saved = runOfficialUpscale(
-                    sourcePath = sourcePath,
-                    sourceWidth = dims.first,
-                    sourceHeight = dims.second,
-                    cost = price,
-                    token = token,
-                )
+                val saved = runOfficialUpscale(sourcePath, dims.first, dims.second, price, token)
                 if (saved != null) {
-                    toast(rf("upscale.done", mapOf("cost" to price, "w" to saved.width, "h" to saved.height)))
-                    runCatching { account = mergeAccountKeepingLast(api.fetchAccount(token, effectiveImageBase())) }
+                    toast(if (rtx) rf("upscale.rtxDone", mapOf("w" to saved.width, "h" to saved.height))
+                        else rf("upscale.done", mapOf("cost" to price, "w" to saved.width, "h" to saved.height)))
+                    if (!rtx) runCatching { account = mergeAccountKeepingLast(api.fetchAccount(token, effectiveImageBase())) }
                 }
             } catch (e: Exception) {
-                toast(rf("upscale.failed", mapOf("error" to cleanError(e))), isError = true)
-            } finally {
-                busy = false
-            }
+                toast(rf(if (rtx) "upscale.rtxFailed" else "upscale.failed", mapOf("error" to cleanError(e))), isError = true)
+            } finally { busy = false }
         }
     }
 
@@ -2887,11 +2892,13 @@ class AppState(app: Application) : AndroidViewModel(app) {
             bitmap.recycle()
             bytes
         }
-        val upscaled = api.officialUpscale(
-            token = token,
-            imagePng = png,
-            imageBaseUrl = effectiveImageBase(),
-        )
+        val upscaled = if (settings.upscaleProvider == "rtx") {
+            withContext(Dispatchers.IO) {
+                platform.kv.edit().putString("reverse_remote_url", reverseRemoteAddress.trim()).putBoolean("reverse_remote_enabled", true).apply()
+                platform.secrets.putSecret("reverse_remote_key", reverseRemoteCode.trim())
+                remoteTagger.upscale(reverseRemoteAddress, reverseRemoteCode, png)
+            }
+        } else api.officialUpscale(token = token, imagePng = png, imageBaseUrl = effectiveImageBase())
         // 放大版的参数沿用放大前那条记录（图库里点开能看到同一套提示词/种子）
         val sourceItem = history.firstOrNull { it.filePath == sourcePath } ?: current
         // 命名：**放大前那张的名字 + 2x**（一眼能对上；重名时 Storage 会自动加序号）
@@ -2918,7 +2925,8 @@ class AppState(app: Application) : AndroidViewModel(app) {
         current = item
         upscaleSource = UpscaleSource(sourcePath, sourceWidth, sourceHeight)
         maskMode = false
-        status = rf("upscale.done", mapOf("cost" to cost, "w" to outWidth, "h" to outHeight))
+        status = if (settings.upscaleProvider == "rtx") rf("upscale.rtxDone", mapOf("w" to outWidth, "h" to outHeight))
+            else rf("upscale.done", mapOf("cost" to cost, "w" to outWidth, "h" to outHeight))
         return item
     }
 
@@ -2928,10 +2936,11 @@ class AppState(app: Application) : AndroidViewModel(app) {
      */
     private suspend fun autoUpscaleIfEnabled(saved: List<HistoryItem>, token: String): Int {
         if (!settings.officialUpscaleAfterGenerate) return 0
+        if (settings.upscaleProvider == "rtx" && (reverseRemoteAddress.isBlank() || reverseRemoteCode.isBlank())) { status = rt("upscale.pairRequired"); return 0 }
         var done = 0
         var spent = 0
         for (item in saved) {
-            val price = OfficialUpscale.price(item.width, item.height) ?: continue
+            val price = if (settings.upscaleProvider == "rtx") 0 else OfficialUpscale.price(item.width, item.height) ?: continue
             val result = runCatching {
                 runOfficialUpscale(
                     sourcePath = item.filePath,
@@ -2950,7 +2959,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
         // 这样 current 不是放大版 → 图生图/遮罩重绘天然就用放大前那张，没有隐藏状态。
         saved.firstOrNull()?.let { current = it }
         upscaleSource = null
-        if (done > 0) status = rf("upscale.autoDone", mapOf("count" to done, "cost" to spent))
+        if (done > 0) status = rf(if (settings.upscaleProvider == "rtx") "upscale.autoDoneRtx" else "upscale.autoDone", mapOf("count" to done, "cost" to spent))
         return done
     }
 
@@ -3872,29 +3881,205 @@ class AppState(app: Application) : AndroidViewModel(app) {
     private val promptTranslationRepository by lazy {
         com.kallan.naistudio.models.PromptTranslationRepository(
             java.io.File(platform.paths.filesDir, "tagcodex-cache"),
+            { file -> platform.openTagLexicon(file) },
         ) { path -> tagCodex.json(path) }
     }
     private var promptTranslationWarmupJob: Job? = null
 
+    private var baseTagDisplayDictionary by mutableStateOf(PromptTranslate.Dict(emptyMap(), emptyMap()))
+    private var baseTagDisplayCodexId by mutableStateOf<String?>(null)
+    var tagDictionaryPreparing by mutableStateOf(false)
+        private set
+    var tagDictionaryError by mutableStateOf(false)
+        private set
+    // The UI only reads a prepared snapshot; merging large maps never runs during composition.
+    var bilingualTagDictionary by mutableStateOf(PromptTranslate.Dict(emptyMap(), emptyMap()))
+        private set
+    private data class DictionaryInput(
+        val codexId: String, val base: PromptTranslate.Dict,
+        val custom: String, val removed: String, val replaced: String,
+    )
+    private val emptyTagDisplayDictionary = PromptTranslate.Dict(emptyMap(), emptyMap())
+    private var tagDictionaryAssemblyJob: Job? = null
+    private var appliedDictionaryInput: DictionaryInput? = null
+
+    private fun dictionaryInput(
+        codexId: String = tagCodexId,
+        base: PromptTranslate.Dict = if (baseTagDisplayCodexId == tagCodexId) baseTagDisplayDictionary else emptyTagDisplayDictionary,
+    ) = DictionaryInput(codexId, base, settings.customTagDictionaryJson,
+        settings.deletedTagDictionaryJson, settings.overriddenTagDictionaryJson)
+
+    private suspend fun assembleDictionary(input: DictionaryInput): PromptTranslate.Dict = withContext(Dispatchers.Default) {
+        val dict = com.kallan.naistudio.models.UserTagDictionary.merge(input.base,
+            com.kallan.naistudio.models.UserTagDictionary.decode(input.custom),
+            com.kallan.naistudio.models.UserTagDictionary.removedTags(input.removed),
+            com.kallan.naistudio.models.UserTagDictionary.removedTags(input.replaced))
+        com.kallan.naistudio.models.UserTagDictionary.prepareSearch(dict)
+        dict.fuzzyAliases // Prepare the first fuzzy lookup off the UI thread as well.
+        dict
+    }
+
+    private fun observeTagDictionary() {
+        if (tagDictionaryAssemblyJob?.isActive == true) return
+        tagDictionaryAssemblyJob = viewModelScope.launch {
+            snapshotFlow { dictionaryInput() }.collectLatest { input ->
+                val dict = assembleDictionary(input)
+                // collectLatest cancels superseded work before it can publish stale aliases.
+                bilingualTagDictionary = dict
+                appliedDictionaryInput = input
+            }
+        }
+    }
+
+    val tagDictionaryInstalled: Boolean get() = promptTranslationRepository.installed() && !tagDictionaryError
+    var tagDictionaryDownloadPrompt by mutableStateOf(false)
+        private set
+    var tagDictionaryDownloading by mutableStateOf(false)
+        private set
+    var tagDictionaryDownloadProgress by mutableStateOf(0)
+        private set
+    private var pendingDictionaryTranslation: String? = null
+
+    fun prepareTagDictionary(requestDownload: Boolean = false) {
+        if (!tagDictionaryInstalled) {
+            if (requestDownload && !tagDictionaryDownloading) tagDictionaryDownloadPrompt = true
+            return
+        }
+        warmPromptTranslationIndex()
+    }
+
+    fun dismissTagDictionaryDownload() {
+        tagDictionaryDownloadPrompt = false
+        val pending = pendingDictionaryTranslation
+        pendingDictionaryTranslation = null
+        // Declining the optional dictionary keeps configured online translation available.
+        if (pending != null) translatePrompt(pending, useDictionary = false)
+    }
+
+    fun downloadTagDictionary() {
+        if (tagDictionaryDownloading) return
+        tagDictionaryDownloading = true
+        tagDictionaryDownloadProgress = 0
+        tagDictionaryError = false
+        viewModelScope.launch {
+            try {
+                promptTranslationRepository.download { percent ->
+                    viewModelScope.launch { tagDictionaryDownloadProgress = percent }
+                }
+                val codexId = tagCodexId
+                val dict = promptTranslationRepository.prepare(codexId)
+                if (tagCodexId == codexId) {
+                    baseTagDisplayDictionary = dict
+                    baseTagDisplayCodexId = codexId
+                }
+                tagDictionaryDownloadPrompt = false
+                val pending = pendingDictionaryTranslation
+                pendingDictionaryTranslation = null
+                if (pending != null) translatePrompt(pending)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                tagDictionaryError = true
+                logWarn("PromptTranslation", "Dictionary download failed: ${error.message}")
+                toast(rt("dictionary.downloadFailed"), isError = true)
+            } finally {
+                tagDictionaryDownloading = false
+            }
+        }
+    }
+
+
+    fun supplementTagDictionary(entries: Map<String, List<String>>, replaceTag: String? = null) {
+        val current = com.kallan.naistudio.models.UserTagDictionary.decode(settings.customTagDictionaryJson)
+        val custom = com.kallan.naistudio.models.UserTagDictionary.append(
+            if (replaceTag == null) current else current - replaceTag, entries)
+        val removed = com.kallan.naistudio.models.UserTagDictionary.removedTags(settings.deletedTagDictionaryJson) -
+            entries.keys.map { com.kallan.naistudio.models.TagZhProtocol.key(it) }.toSet()
+        setSettings { it.copy(
+            customTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encode(custom),
+            deletedTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encodeRemoved(removed),
+        ) }
+    }
+
+    /** A dictionary deletion affects lookup and translation; downloaded caches remain replaceable. */
+    fun deleteDictionaryTag(tag: String) {
+        val key = com.kallan.naistudio.models.TagZhProtocol.key(tag)
+        val custom = com.kallan.naistudio.models.UserTagDictionary.decode(settings.customTagDictionaryJson) - key
+        val removed = com.kallan.naistudio.models.UserTagDictionary.removedTags(settings.deletedTagDictionaryJson) + key
+        val replaced = com.kallan.naistudio.models.UserTagDictionary.removedTags(settings.overriddenTagDictionaryJson) - key
+        setSettings { it.copy(
+            customTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encode(custom),
+            deletedTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encodeRemoved(removed),
+            overriddenTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encodeRemoved(replaced),
+        ) }
+    }
+
+    /** Editing replaces all labels, including built-in labels; adding remains additive. */
+    fun updateDictionaryEntry(original: String, english: String, aliases: List<String>) {
+        val oldKey = com.kallan.naistudio.models.TagZhProtocol.key(original)
+        val key = com.kallan.naistudio.models.TagZhProtocol.key(english)
+        require(aliases.isNotEmpty() && aliases.all { com.kallan.naistudio.models.UserTagDictionary.valid(english, it) })
+        require(key == oldKey || !bilingualTagDictionary.containsTag(key)) { "dictionary.duplicate" }
+        val custom = (com.kallan.naistudio.models.UserTagDictionary.decode(settings.customTagDictionaryJson) - oldKey) +
+            (key to aliases.distinct())
+        val removed = (com.kallan.naistudio.models.UserTagDictionary.removedTags(settings.deletedTagDictionaryJson) - key) +
+            if (oldKey == key) emptySet() else setOf(oldKey)
+        val replaced = (com.kallan.naistudio.models.UserTagDictionary.removedTags(settings.overriddenTagDictionaryJson) - oldKey) + key
+        setSettings { it.copy(
+            customTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encode(custom),
+            deletedTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encodeRemoved(removed),
+            overriddenTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encodeRemoved(replaced),
+        ) }
+    }
+
+    fun removeSupplementalTag(tag: String) {
+        val custom = com.kallan.naistudio.models.UserTagDictionary.decode(settings.customTagDictionaryJson) - tag
+        val replaced = com.kallan.naistudio.models.UserTagDictionary.removedTags(settings.overriddenTagDictionaryJson) - tag
+        setSettings { it.copy(
+            customTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encode(custom),
+            overriddenTagDictionaryJson = com.kallan.naistudio.models.UserTagDictionary.encodeRemoved(replaced),
+        ) }
+    }
+
+
+
     private fun warmPromptTranslationIndex() {
+        observeTagDictionary()
+        if (!promptTranslationRepository.installed()) return
         if (promptTranslationWarmupJob?.isActive == true) return
+        if (baseTagDisplayCodexId == tagCodexId && !tagDictionaryError) return
         val codexId = tagCodexId
+        tagDictionaryPreparing = true
+        tagDictionaryError = false
         promptTranslationWarmupJob = viewModelScope.launch {
             try {
-                promptTranslationRepository.prepare(codexId)
+                val dict = promptTranslationRepository.prepare(codexId)
+                if (tagCodexId == codexId) {
+                    baseTagDisplayDictionary = dict
+                    baseTagDisplayCodexId = codexId
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
+                tagDictionaryError = true
                 logWarn("PromptTranslation", "Index preparation failed: ${e.message}")
+            } finally {
+                tagDictionaryPreparing = false
+                if (tagCodexId != codexId) {
+                    promptTranslationWarmupJob = null
+                    warmPromptTranslationIndex()
+                }
             }
         }
     }
 
     /** A first click can join startup preparation, but must not wait indefinitely. */
     private suspend fun preparedPromptTranslationDict(): PromptTranslate.Dict {
-        return try {
+        val codexId = tagCodexId
+        val base = if (!promptTranslationRepository.installed()) PromptTranslate.Dict(emptyMap(), emptyMap())
+        else if (baseTagDisplayCodexId == codexId) baseTagDisplayDictionary else try {
             withTimeoutOrNull(8000) {
-                promptTranslationRepository.prepare(tagCodexId)
+                promptTranslationRepository.prepare(codexId)
             } ?: PromptTranslate.Dict(emptyMap(), emptyMap())
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -3902,6 +4087,12 @@ class AppState(app: Application) : AndroidViewModel(app) {
             logWarn("PromptTranslation", "Using translation service without dictionary: ${e.message}")
             PromptTranslate.Dict(emptyMap(), emptyMap())
         }
+        if (base.isNotEmpty && tagCodexId == codexId) {
+            baseTagDisplayDictionary = base
+            baseTagDisplayCodexId = codexId
+        }
+        val input = dictionaryInput(codexId, base)
+        return if (input == appliedDictionaryInput) bilingualTagDictionary else assembleDictionary(input)
     }
 
     /**
@@ -3934,11 +4125,10 @@ class AppState(app: Application) : AndroidViewModel(app) {
      * 后端按设置里的「翻译服务」选：**LLM**（LLM API）或**百度翻译**（百度 API）。
      * system prompt 用手写常量 [PromptRules.TRANSLATE_RULES]（**原样**取自「提示词小助手」插件）。
      */
-    fun translatePrompt(field: String = PromptField.POSITIVE) {
+    fun translatePrompt(field: String = PromptField.POSITIVE, useDictionary: Boolean = true) {
         // 剧情框也能翻（用户 2026-09-17）：它不是提示词，读写的都是 `comicPlot`
-        val plot = PromptField.isPlot(field)
-        val key = if (plot) PromptField.PLOT else PromptField.orDefault(field)
-        val text = (if (plot) comicPlot else params.promptOf(key)).trim()
+        val key = PromptField.stackKey(field)
+        val text = promptTextFor(key).trim()
         if (text.isEmpty()) {
             toast(rt("llm.emptyPrompt"), isError = true)
             return
@@ -3947,17 +4137,20 @@ class AppState(app: Application) : AndroidViewModel(app) {
         // 再点一次 = 撤销翻译，回到原文
         val revert = translateRevert[key]
         if (revert != null && text == revert.second) {
-            if (plot) {
-                comicPlot = revert.first
-            } else {
-                params = params.withPrompt(key, revert.first)
-                viewModelScope.launch { withContext(Dispatchers.IO) { storage.setParams(params) } }
-            }
+            setPromptField(key, revert.first)
             translateRevert.remove(key)
             toast(rt("llm.translateReverted"))
             return
         }
 
+        if (useDictionary && !tagDictionaryInstalled) {
+            pendingDictionaryTranslation = field
+            tagDictionaryDownloadPrompt = true
+            return
+        }
+
+        val characterField = PromptField.isChar(key)
+        val translationParams = PromptTranslate.Params()
         val chinese = LlmApi.looksChinese(text)
         val srcLang = if (chinese) "简体中文" else "英文"
         val dstLang = if (chinese) "英文" else "简体中文"
@@ -3983,7 +4176,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
                 status = rt("llm.runningBaidu")
                 try {
                     val dict = preparedPromptTranslationDict()
-                    val tp = PromptTranslate.Params()
+                    val tp = translationParams
                     val outcome = PromptTranslate.run(text, dict, tp) { lines ->
                         // 同批同方向（`planBatches` 保证）⇒ 用"批里含不含中文"判断方向可靠
                         val toEn = lines.any { l -> LlmApi.looksChinese(l) }
@@ -4013,6 +4206,38 @@ class AppState(app: Application) : AndroidViewModel(app) {
             return
         }
 
+        if (chinese || characterField) {
+            if (llmBusy) return
+            val cfg = settings.llmConfigForTranslate()
+            viewModelScope.launch {
+                llmBusy = true
+                status = rt("llm.running")
+                try {
+                    val dict = preparedPromptTranslationDict()
+                    val tp = translationParams
+                    val outcome = PromptTranslate.run(text, dict, tp) { lines ->
+                        if (!cfg.configured) throw LlmException(rt("llm.notConfigured"))
+                        val result = llmChatRecorded(
+                            kindKey = "conversation.kind.optimize", cfg = cfg,
+                            systemPrompt = PromptRules.translateRules(
+                                if (lines.any { LlmApi.looksChinese(it) }) "简体中文" else "英文",
+                                if (lines.any { LlmApi.looksChinese(it) }) "英文" else "简体中文",
+                            ) +
+                                "\nTranslate each input line separately. Return exactly one output line per input line, in the same order, without numbering or commentary.",
+                            userPrompt = lines.joinToString("\n"),
+                        )
+                        PromptRules.cleanModelOutput(result).trim().lines()
+                    }
+                    val rendered = PromptTranslate.render(outcome.items, tp)
+                    applyPromptResult(if (chinese) rendered.tags else rendered.zh,
+                        "llm.translateDone", key, rememberOriginal = text, detail = translateDetail(outcome))
+                } catch (e: Exception) {
+                    toast(rf("llm.failed", mapOf("error" to (e.message ?: ""))), isError = true)
+                } finally { llmBusy = false }
+            }
+            return
+        }
+
         runLlm(
             cfg = settings.llmConfigForTranslate(),
             system = PromptRules.translateRules(srcLang, dstLang),
@@ -4031,9 +4256,8 @@ class AppState(app: Application) : AndroidViewModel(app) {
      * system prompt 用设置里可编辑的「优化规则」（默认值原样取自「提示词小助手」插件）。
      */
     fun optimizePrompt(field: String = PromptField.POSITIVE) {
-        val plot = PromptField.isPlot(field)
-        val key = if (plot) PromptField.PLOT else PromptField.orDefault(field)
-        val text = (if (plot) comicPlot else params.promptOf(key)).trim()
+        val key = PromptField.stackKey(field)
+        val text = promptTextFor(key).trim()
         if (text.isEmpty()) {
             toast(rt("llm.emptyPrompt"), isError = true)
             return
@@ -4068,17 +4292,28 @@ class AppState(app: Application) : AndroidViewModel(app) {
         // ⚠️ `stackKey`：剧情框要原样保留 PLOT（用 `orDefault` 会折成正面提示词，
         // 于是"在剧情框里翻译/优化"的结果写进了提示词 —— 用户 2026-09-18 报的 bug）。
         val key = PromptField.stackKey(field)
-        val cleaned = PromptRules.cleanModelOutput(raw)
+        val cleaned = PromptRules.cleanModelOutput(raw).let {
+            if (doneKey == "llm.translateDone") PromptWeight.separateNumericTagClosings(it) else it
+        }
         if (cleaned.isEmpty()) throw LlmException(rt("llm.emptyResult"))
-        if (PromptField.isPlot(key)) {
+        when {
             // 剧情：写回 comicPlot（自带防抖落盘 + setter 自己记一笔撤销）
-            comicPlot = cleaned
-        } else {
-            val before = params.promptOf(key)
-            params = params.withPrompt(key, cleaned)
-            // AI 改写也算一次改动，撤销按钮要能回到改写前
-            if (before != cleaned) recordPromptEdit(key, before)
-            withContext(Dispatchers.IO) { storage.setParams(params) }
+            PromptField.isPlot(key) -> comicPlot = cleaned
+
+            // 角色 / 分镜的框：`setCharacterPrompt` 会先记一笔撤销再写
+            PromptField.isChar(key) -> setCharacterPrompt(
+                index = PromptField.charIndex(key),
+                negative = PromptField.charNegative(key),
+                text = cleaned,
+            )
+
+            else -> {
+                val before = params.promptOf(key)
+                params = params.withPrompt(key, cleaned)
+                // AI 改写也算一次改动，撤销按钮要能回到改写前
+                if (before != cleaned) recordPromptEdit(key, before)
+                withContext(Dispatchers.IO) { storage.setParams(params) }
+            }
         }
         if (rememberOriginal != null) {
             translateRevert[key] = rememberOriginal to cleaned
@@ -4092,6 +4327,18 @@ class AppState(app: Application) : AndroidViewModel(app) {
      * 走这里而不是 `setParam`，是因为历史抽屉现在要按**当前选中的框**落笔。
      */
     fun setPromptField(field: String, text: String) {
+        if (PromptField.isPlot(field)) {
+            comicPlot = text
+            return
+        }
+        if (PromptField.isChar(field)) {
+            setCharacterPrompt(
+                index = PromptField.charIndex(field),
+                negative = PromptField.charNegative(field),
+                text = text,
+            )
+            return
+        }
         val key = PromptField.orDefault(field)
         if (blockedByPromptLock(key)) return
         val before = params.promptOf(key)
@@ -4099,6 +4346,16 @@ class AppState(app: Application) : AndroidViewModel(app) {
         params = params.withPrompt(key, text)
         recordPromptEdit(key, before)
         viewModelScope.launch { withContext(Dispatchers.IO) { storage.setParams(params) } }
+    }
+
+    fun setCharacterPrompt(index: Int, negative: Boolean, text: String) {
+        val key = PromptField.charKey(index, negative)
+        val before = promptTextFor(key)
+        if (before == text) return
+        recordPromptEdit(key, before)
+        updateCharacter(index) {
+            if (negative) it.copy(negativePrompt = text) else it.copy(prompt = text)
+        }
     }
 
     /**
@@ -4148,7 +4405,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
      */
     private fun blockedByPromptLock(field: String): Boolean {
         // 剧情框没有锁（三把锁只管提示词那三条），别拿正面提示词的锁拦它
-        if (PromptField.isPlot(field)) return false
+        if (PromptField.isPlot(field) || PromptField.isChar(field)) return false
         val key = PromptField.orDefault(field)
         if (!isPromptLocked(key)) return false
         toast(rf("prompt.lockBlocked", mapOf("field" to rt(promptFieldNameKey(key)))), isError = true)
@@ -4197,6 +4454,10 @@ class AppState(app: Application) : AndroidViewModel(app) {
      * @param field `PromptField.STYLE / POSITIVE / NEGATIVE`
      */
     fun clearOnePrompt(field: String) {
+        if (PromptField.isChar(field) || PromptField.isPlot(field)) {
+            setPromptField(field, "")
+            return
+        }
         val locked = when (field) {
             PromptField.STYLE -> settings.promptLockStyle
             PromptField.POSITIVE -> settings.promptLockPositive
@@ -4310,8 +4571,53 @@ class AppState(app: Application) : AndroidViewModel(app) {
     var reverseBusy by mutableStateOf(false)
         private set
 
+    var reverseRemoteAddress by mutableStateOf(platform.kv.getString("reverse_remote_url", "").orEmpty())
+        private set
+    var reverseRemoteCode by mutableStateOf(platform.secrets.getSecret("reverse_remote_key"))
+        private set
+    var reverseRemote by mutableStateOf(platform.kv.getBoolean("reverse_remote_enabled", reverseRemoteAddress.isNotBlank() && reverseRemoteCode.isNotBlank()))
+        private set
+    var reverseRemoteStatus by mutableStateOf("")
+        private set
+    private val remoteTagger = com.kallan.naistudio.services.RemoteTaggerClient()
+    private var remoteReverseJob: kotlinx.coroutines.Job? = null
+    override fun onCleared() { remoteTagger.cancel(); super.onCleared() }
+    fun chooseReverseRemote(value: Boolean) {
+        if (!reverseBusy) {
+            reverseRemote = value
+            platform.kv.edit().putBoolean("reverse_remote_enabled", value).apply()
+        }
+    }
+    fun updateReverseRemoteAddress(value: String) { reverseRemoteAddress = value }
+    fun updateReverseRemoteCode(value: String) { reverseRemoteCode = value }
+    fun cancelRemoteReverse() { remoteTagger.cancel(); remoteReverseJob?.cancel() }
+    fun runRemoteReverse(testOnly: Boolean = false) {
+        if (reverseBusy) return
+        val address = reverseRemoteAddress.trim()
+        val code = reverseRemoteCode.trim()
+        val path = if (testOnly) null else reverseImagePath ?: return
+        reverseBusy = true
+        if (!testOnly) reverseResult = null
+        reverseRemoteStatus = rt("reverse.remote.running")
+        remoteReverseJob = viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    // Persist the endpoint normally, and the pairing secret in Android Keystore.
+                    platform.kv.edit().putString("reverse_remote_url", address).putBoolean("reverse_remote_enabled", true).apply()
+                    platform.secrets.putSecret("reverse_remote_key", code)
+                    remoteTagger.request(address, code, path?.let { java.io.File(it) })
+                }
+                if (testOnly) { reverseRemoteStatus = rt("reverse.remote.connected"); toast(reverseRemoteStatus) }
+                else { reverseResult = result; reverseRemoteStatus = rt("reverse.done") }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (error: Exception) { reverseRemoteStatus = error.message ?: "连接电脑失败"; toast(reverseRemoteStatus, isError = true) }
+            finally { reverseBusy = false; remoteReverseJob = null }
+        }
+    }
+
     /** 工具页选中一张图（复制进 `filesDir/reverse/`，之后按路径使用）。 */
     fun selectReverseImage(uri: Uri) {
+        if (reverseBusy) return
         viewModelScope.launch {
             val saved = withContext(Dispatchers.IO) { copyImageToPrivate(uri, "reverse") }
             if (saved == null) {
@@ -4326,6 +4632,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
 
     /** 清掉工具页的选择与结果。 */
     fun clearReverseImage() {
+        if (reverseBusy) return
         reverseImagePath = null
         reverseResult = null
     }
@@ -4560,6 +4867,10 @@ class AppState(app: Application) : AndroidViewModel(app) {
      * 搜索。
      * @param reset true = 回到第 1 页（改关键词/筛选/排序时用）
      */
+    /** Advances only after a new result set arrives, including identical page contents. */
+    var animaResultRevision by mutableStateOf(0)
+        private set
+
     fun animaSearch(reset: Boolean = false) {
         if (reset) animaPage = 1
         viewModelScope.launch {
@@ -4572,6 +4883,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
                     }
                     val (total, list) = AnimaDexProtocol.parseSeries(json)
                     animaSeries = list
+                    animaResultRevision++
                     animaTotal = total
                     // 作品视图服务端也是每页 36
                     animaPages = ((total + AnimaDexProtocol.PAGE_SIZE - 1) / AnimaDexProtocol.PAGE_SIZE)
@@ -4586,6 +4898,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
                 animaTotal = page.total
                 animaPages = page.pages
                 animaPage = page.page
+                animaResultRevision++
             } catch (e: Exception) {
                 animaError = cleanError(e)
                 animaResults = emptyList()
@@ -4727,42 +5040,13 @@ class AppState(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------- 第 ㊿ 批：tag 的中文对照（词表）
 
-    /**
-     * **当前这本的两片中文对照词表** ✓（通用层在前、本书分片在后 ✓ —— 查表顺序就是它 ✓）。
-     *
-     * 口径照原网页 `assets/app/tag-zh-core.js` ✓：优先级 **`m` > `d` > `a`** ✓，
-     * 同级**先 core 再书分片** ✓。
-     */
-    private var tagCodexZhShards by mutableStateOf<List<TagZhProtocol.Shard>>(emptyList())
+    /** All bilingual labels, including the codex, use the main dictionary and user edits. */
+    val tagCodexZhReady: Boolean get() = bilingualTagDictionary.isNotEmpty
 
-    /** 词表备好了吗 ✓ —— 界面据此决定要不要画中文小字 ✓。 */
-    val tagCodexZhReady: Boolean get() = tagCodexZhShards.isNotEmpty()
+    fun tagCodexZh(text: String): String? = bilingualTagDictionary.translation(TagZhProtocol.key(text))
 
-    /** **查一个 tag 的中文** ✓（没有就 `null` ✓ —— 那一格只显示英文 ✓，不显空占位 ✗）。 */
-    fun tagCodexZh(text: String): String? =
-        TagZhProtocol.lookup(tagCodexZhShards, TagZhProtocol.key(text))
-
-    /**
-     * 把 `text` 按 tag 切成段、逐段配好中文 ✓（界面照着画 ✓）。
-     *
-     * ⚠️ **拼回 `lead + text + sep` 就是原文** ✓ —— 这就是"**复制不带翻译**"的地基 ✓。
-     */
     fun tagCodexZhPieces(text: String): List<Pair<TagZhProtocol.Piece, String?>> =
         TagZhProtocol.split(text).map { it to tagCodexZh(it.text) }
-
-    /** 拉当前这本的两片词表 ✓（**失败静默** ✗ —— 没有对照就是"不显示中文" ✓）。 */
-    private suspend fun tagCodexLoadZh(codexId: String) {
-        val loaded = withContext(Dispatchers.IO) {
-            val out = mutableListOf<TagZhProtocol.Shard>()
-            for (path in listOf(TagZhProtocol.CORE_PATH, TagZhProtocol.shardPath(codexId))) {
-                runCatching { TagZhProtocol.parseShard(tagCodex.json(path)) }
-                    .getOrNull()
-                    ?.let { if (!it.isEmpty) out.add(it) }
-            }
-            out
-        }
-        tagCodexZhShards = loaded
-    }
 
     /** 强制重拉当前这本（下拉里的「刷新」）。 */
     fun tagCodexReload() {
@@ -4793,7 +5077,6 @@ class AppState(app: Application) : AndroidViewModel(app) {
                 // ⚠️ **第 ㊿ 批**：词条到手之后，顺手把那两片**中文对照词表**也备好 ✓
                 //（同一条缓存 + 三级降级 ✓，下过一次就不再联网 ✓；
                 // 失败静默 ✓ —— 没有对照表就只是"不显示中文" ✓，不影响查词条 ✓）。
-                tagCodexLoadZh(codexId)
                 warmPromptTranslationIndex()
                 // 只在**成功加载之后**才记住：加载失败不该把一本打不开的书存成默认
                 rememberTagCodexPrefs()
@@ -6302,20 +6585,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
     // ⚠️ 这一块**只读** ✓：界面拿它算按钮上那个数字 ✓。
     // ------------------------------------------------------------------
 
-    // ------------------------------------------------------------------
-    // **提示词词典**（用户 2026-09-24：「补充词典库」✓）—— 见 `models/TagDictionary.kt` ✓。
-    //
-    // ⚠️ **只读** ✗（启动时后台加载一次 ✓，界面拿它出候选 ✓，没有任何写入口 ✓）；
-    // ⚠️ 加载失败 = **空表** ✓（补全不出现 ✓）——**不是**崩溃 ✓。
-    // ------------------------------------------------------------------
 
-    /** 词典（39,577 条 ✓；加载完成前是空的 ✓）。 */
-    var tagDictionary by mutableStateOf<List<TagDictionary.Entry>>(emptyList())
-        private set
-
-    /** **按已经打出来的那一截给候选** ✓（界面每次重组调一次 ✓，一趟线性扫描 ✓）。 */
-    fun tagSuggestions(query: String, limit: Int = 8): List<TagDictionary.Entry> =
-        if (tagDictionary.isEmpty()) emptyList() else TagDictionary.suggest(tagDictionary, query, limit)
 
     /** 现在是不是 Opus 档 ✓（免费额度那条要它 ✓）。 */
     private val opusNow: Boolean
@@ -6342,11 +6612,11 @@ class AppState(app: Application) : AndroidViewModel(app) {
                 return AnlasCost.estimate(
                     width = plan.requestW,
                     height = plan.requestH,
-                    steps = params.steps,
+                    steps = params.steps.coerceAtMost(28),
                     model = settings.inpaintModel,
                     smea = params.smea,
                     smeaDyn = params.smeaDyn,
-                    strength = settings.inpaintStrength,
+                    strength = 1.0,
                     isOpus = opusNow,
                     opusQuotaExhausted = opusQuotaExhaustedNow,
                 ).takeIf { it != AnlasCost.INVALID }
@@ -7196,6 +7466,31 @@ class AppState(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------- 历史与分组
 
+    var galleryExportBusy by mutableStateOf(false)
+        private set
+
+    /** SAF export does not change automatic save settings or remove private originals. */
+    fun exportGalleryImages(ids: Set<String>, target: Uri) {
+        if (galleryExportBusy || ids.isEmpty()) return
+        val files = history.filter { it.id in ids }.map { java.io.File(it.filePath) }
+        galleryExportBusy = true
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    com.kallan.naistudio.services.GalleryExporter.export(getApplication<Application>(), files, target)
+                }
+                val failed = result.failed + ids.size - files.size
+                toast(if (failed == 0) "已导出 ${result.exported} 张图片" else "已导出 ${result.exported} 张，${failed} 张失败", isError = failed > 0)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                toast("图片导出失败：${cleanError(e)}", isError = true)
+            } finally {
+                galleryExportBusy = false
+            }
+        }
+    }
+
     fun selectImage(item: HistoryItem) { current = item }
 
     fun deleteHistory(id: String) {
@@ -7338,26 +7633,24 @@ class AppState(app: Application) : AndroidViewModel(app) {
         private set
 
     fun updateInfiniteFrame(rect: EditRect?) {
-        infiniteFrame = rect
+        if (infiniteRunning) return
+        val size = com.kallan.naistudio.models.InfiniteFrameSizes.nearest(
+            infiniteFrame?.w ?: settings.infiniteFrameW.takeIf { it > 0 } ?: 1024,
+            infiniteFrame?.h ?: settings.infiniteFrameH.takeIf { it > 0 } ?: 1024,
+        )
+        val fixed = rect?.copy(w = size.width, h = size.height)
+        infiniteFrame = fixed?.let { infiniteCanvas?.clampFrame(it) ?: it }
     }
 
-    /**
-     * 用户 2026-09-29：「可自己设置拉框的长宽」✓ —— 以**框中心**为准改尺寸；
-     * 总像素 ≤ 1024×1024（超了就退**另一边** ✓，[keepWidth] = 刚改的是宽）；请求尺寸照旧自动算 ✓。
-     */
+    /** Select a supported size while keeping the crop center fixed. */
     fun setInfiniteFrameSize(width: Int, height: Int, keepWidth: Boolean) {
-        val f = infiniteFrame ?: return
-        var w = width.coerceIn(64, 4096)
-        var h = height.coerceIn(64, 4096)
-        if (w.toLong() * h > INFINITE_FRAME_MAX_AREA) {
-            if (keepWidth) {
-                h = (INFINITE_FRAME_MAX_AREA / w).coerceAtLeast(64)
-            } else {
-                w = (INFINITE_FRAME_MAX_AREA / h).coerceAtLeast(64)
-            }
-        }
-        val next = EditRect(f.x + f.w / 2 - w / 2, f.y + f.h / 2 - h / 2, w, h)
-        updateInfiniteFrame(infiniteCanvas?.clampFrame(next) ?: next)
+        if (infiniteRunning) return
+        val size = com.kallan.naistudio.models.InfiniteFrameSizes.presets
+            .firstOrNull { it.width == width && it.height == height } ?: return
+        val f = infiniteFrame ?: EditRect(0, 0, size.width, size.height)
+        val next = EditRect(f.x + (f.w - size.width) / 2, f.y + (f.h - size.height) / 2,
+            size.width, size.height)
+        infiniteFrame = infiniteCanvas?.clampFrame(next) ?: next
         commitInfiniteCanvas()
     }
 
@@ -7446,48 +7739,20 @@ class AppState(app: Application) : AndroidViewModel(app) {
         infiniteCanvasSource = null
     }
 
-    /**
-     * **这一次会请求多大** ✓（界面那行提示与真正发出去的请求**同一个函数** ✓ ——
-     * 界面写一个数、请求发另一个数是最伤人的不一致 ✗）。
-     *
-     * 内部先把画布"在心里"扩到装得下这个框 ✓（框通常整个在画布外 ✓，直接喂给 `FocusedInpaint.plan`
-     * 会被夹成空矩形 ✗），再交给 `InpaintSize.forRect` **自动算尺寸**：
-     * 等比 + **总面积 ≤1024×1024 = 1MP** + 两边保 64 ✓（小框自动放大 ✓ 大框才缩 ✓）。
-     */
-    fun infiniteFramePlan(contextPixels: Int = settings.infiniteContext): Pair<InfiniteCanvas, FocusedInpaint.Plan>? {
+    /** Exact fixed-size crop/request. Legacy context settings are intentionally ignored. */
+    fun infiniteFramePlan(): Pair<InfiniteCanvas, FocusedInpaint.Plan>? {
         val canvas = infiniteCanvas ?: return null
-        val frame = infiniteFrame ?: return null
-        val grown = canvas.expandedToInclude(
-            frame.x.toFloat(),
-            frame.y.toFloat(),
-            frame.w.toFloat(),
-            frame.h.toFloat(),
-        ) ?: return null
-        // ⚠️ 换算必须用 **grown** 的 `pixelX/pixelY` ✗：往左 / 上长过之后原点变了 ✓
-        val framePx = EditRect(
-            x = grown.pixelX(frame.x.toFloat()).roundToInt(),
-            y = grown.pixelY(frame.y.toFloat()).roundToInt(),
-            w = frame.w,
-            h = frame.h,
-        ).clampTo(grown.width, grown.height)
-        if (framePx.isEmpty) return null
-        // 用户 2026-09-29：「拉框在中心，上下文是围绕拉框的」⇒ 裁剪块 = 框四周**各留一圈** ✓。
-        // ⚠️ 不再夹进画布 ✗（原来贴着画布边时上下文只剩一侧）：在"框 + 两圈"那块虚拟画布上算，
-        //    再平移回画布坐标 ✓；伸出画布的那部分按透明（→ 白）送 ✓，贴回仍只贴框 ✓。
-        val context = contextPixels.coerceIn(0, 512)
-        val local = FocusedInpaint.plan(
-            frame = EditRect(context, context, framePx.w, framePx.h),
-            contextPixels = context,
-            sourceWidth = framePx.w + context * 2,
-            sourceHeight = framePx.h + context * 2,
-            autoSizeByRect = true,
-        ) ?: return null
-        return grown to local.copy(cropX = framePx.x - context, cropY = framePx.y - context)
+        val frame = infiniteFrame?.let(com.kallan.naistudio.models.InfiniteFrameSizes::normalize) ?: return null
+        val grown = canvas.expandedToInclude(frame.x.toFloat(), frame.y.toFloat(),
+            frame.w.toFloat(), frame.h.toFloat()) ?: return null
+        val framePx = frame.copy(x = grown.pixelX(frame.x.toFloat()).roundToInt(),
+            y = grown.pixelY(frame.y.toFloat()).roundToInt())
+        return grown to com.kallan.naistudio.models.InfiniteFrameSizes.plan(framePx)
     }
 
     /** 界面上那一行"将请求 …"（没框 / 算不出 ⇒ null ✓）。 */
-    fun infinitePlanText(contextPixels: Int = settings.infiniteContext): String? {
-        val plan = infiniteFramePlan(contextPixels)?.second ?: return null
+    fun infinitePlanText(): String? {
+        val plan = infiniteFramePlan()?.second ?: return null
         return rf("infinite.planInfo", mapOf("w" to plan.requestW, "h" to plan.requestH))
     }
 
@@ -7506,7 +7771,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
         val w = settings.infiniteFrameW
         val h = settings.infiniteFrameH
         infiniteFrame = if (w > 0 && h > 0) {
-            capInfiniteFrameArea(EditRect(settings.infiniteFrameX, settings.infiniteFrameY, w, h))
+            com.kallan.naistudio.models.InfiniteFrameSizes.normalize(EditRect(settings.infiniteFrameX, settings.infiniteFrameY, w, h))
         } else {
             null
         }
@@ -7733,6 +7998,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
             encodeInfiniteCanvas(start, infinitePixels)
         }
         val previousPath = infiniteCanvasFile
+        val inpaintSettings = settings
 
         // ---- ① 扩画布（够不到 ⇒ 到上限了，如实说 ✓）----
         val grown = start.expandedToInclude(
@@ -7761,11 +8027,12 @@ class AppState(app: Application) : AndroidViewModel(app) {
         val plan = infiniteFramePlan()?.second
             ?: throw IllegalStateException(rt("infinite.frameTooSmall"))
 
-        val inpaintModel = settings.inpaintModel
+        val inpaintModel = inpaintSettings.inpaintModel
         val taskParams = params.copy(
             model = inpaintModel,
             width = plan.requestW,
             height = plan.requestH,
+            steps = params.steps.coerceAtMost(28),
         )
         val seed = resolveSeed(params)
         val initialExtras = extras.copy(stylePresetPrompts = activeStylePresetPrompts(), stylePresetNegatives = activeStylePresetNegatives())
@@ -7773,55 +8040,45 @@ class AppState(app: Application) : AndroidViewModel(app) {
 
         // ---- ③ 裁剪 + 蒙版（位图活儿放后台 ✓，与「重做」同一套操作 ✓）----
         val prepared = withContext(Dispatchers.Default) {
-            val crop = IntArray(plan.cropW * plan.cropH)
-            // 框的范围**从 `plan.frameInCrop` 反推** ✓（不再自己换算一次 ✓，见 `InfiniteCanvas` 的"唯一一处"✓）
-            val frameLeft = plan.cropX + plan.frameInCrop.x
-            val frameTop = plan.cropY + plan.frameInCrop.y
-            val frameRight = frameLeft + plan.frameInCrop.w
-            val frameBottom = frameTop + plan.frameInCrop.h
-            var drawnInFrame = 0
-            val source = infinitePixels
-            for (row in 0 until plan.cropH) {
-                val dstRow = row * plan.cropW
-                val gy = plan.cropY + row
-                val rowIn = gy >= 0 && gy < canvas.height
-                for (col in 0 until plan.cropW) {
-                    val gx = plan.cropX + col
-                    // 裁剪块可以伸出画布（上下文围着框 ✓）⇒ 画布外 = 透明 ✓
-                    val argb = if (rowIn && gx >= 0 && gx < canvas.width) source[gy * canvas.width + gx] else 0
-                    // ⚠️ 透明像素铺**白**再送 ✗：服务端对"全透明底图"没有定义（实测出灰噪 ✓）。
-                    //    白底 = 这张画布上"还没画"那块的替身 ✓（贴回来的只有框那一块 ✓，白不会留在画布上 ✓）
-                    if ((argb ushr 24) != 0) {
-                        crop[dstRow + col] = argb
-                        if (gx >= frameLeft && gx < frameRight && gy >= frameTop && gy < frameBottom) {
-                            drawnInFrame++
-                        }
-                    } else {
-                        crop[dstRow + col] = 0xFFFFFFFF.toInt()
-                    }
-                }
+            val input = com.kallan.naistudio.models.InfiniteCanvasInput.prepare(
+                infinitePixels, canvas.width, canvas.height, plan,
+            )
+            if (!input.hasBlankInFrame) throw IllegalStateException(rt("infinite.noBlankArea"))
+            if (input.hasBlankInFrame && !input.hasReference && infinitePixels.any { (it ushr 24) != 0 }) {
+                throw IllegalStateException(rt("infinite.noReference"))
             }
-            val cropBitmap = Bitmap.createBitmap(crop, plan.cropW, plan.cropH, Bitmap.Config.ARGB_8888)
+            val cropBitmap = Bitmap.createBitmap(input.pixels, plan.cropW, plan.cropH, Bitmap.Config.ARGB_8888)
             val basePng = MaskCodec.basePng(cropBitmap, plan.requestW, plan.requestH)
             cropBitmap.recycle()
-            // 本批还没有"框里再涂一小块"的界面 ⇒ 交给现成的 `maskIntoRequest(fillWholeFrame = true)`
-            //（官方"框里留空 = 整框重绘" ✓，一行新算法都不加 ✓）
-            val emptyMask = PixelMask(plan.cropW, plan.cropH, ByteArray(plan.cropW * plan.cropH))
-            val focusMask = FocusedInpaint.maskIntoRequest(emptyMask, plan, fillWholeFrame = true)
-                ?: throw IllegalStateException(rt("mask.empty"))
-            val requestMask = MaskCodec.inpaintMask(focusMask, plan.requestW, plan.requestH)
-                ?: throw IllegalStateException(rt("error.inpaintMaskTooSmall"))
+            val alignedMask = MaskCodec.inpaintMask(
+                com.kallan.naistudio.models.MaskExpand.dilate(input.mask, inpaintSettings.inpaintMaskExpand),
+                plan.requestW, plan.requestH,
+            )
+                ?: input.mask
+            val requestMask = input.completeRequestMask(
+                if (alignedMask.width == plan.requestW && alignedMask.height == plan.requestH) alignedMask
+                else com.kallan.naistudio.models.PixelMask(plan.requestW, plan.requestH, ByteArray(plan.requestW * plan.requestH)),
+            )
+            val alpha = if (inpaintSettings.inpaintAddOriginalImage) {
+                val requestAlpha = InpaintComposite.blendAlpha(
+                    requestMask, inpaintSettings.inpaintMaskFeather, inpaintSettings.inpaintEdgeProtection,
+                )
+                input.completeBlankAlpha(MaskCodec.scaleNearest(
+                    requestAlpha, plan.requestW, plan.requestH, plan.cropW, plan.cropH,
+                ))
+            } else null
             PreparedInfiniteFrame(
                 basePng = basePng,
                 maskPng = MaskCodec.maskPng(requestMask, plan.requestW, plan.requestH),
-                drawnInFrame = drawnInFrame,
+                strength = input.strength(inpaintSettings.inpaintStrength),
+                originalPixels = input.pixels,
+                blendAlpha = alpha,
             )
         }
 
-        // 强度：框里**一点画都没有**（往空白处拓展 ✓）⇒ 全重绘 1.0 ✓（留着 0.7 会把白底透出来，
-        // 看着就是"灰蒙蒙一片没画" ✗）；框压到了已有画面 ⇒ 按用户设的强度 ✓，保住笔触 ✓。
-        val strength = if (prepared.drawnInFrame == 0) 1.0 else settings.inpaintStrength
-        val noise = settings.inpaintNoise
+        // An extension must fully generate empty pixels even if the frame overlaps old content.
+        val strength = prepared.strength
+        val noise = inpaintSettings.inpaintNoise
         if (cancelRequested) throw kotlinx.coroutines.CancellationException("cancelled")
 
         val (returned, usedModel) = api.inpaint(
@@ -7857,7 +8114,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
                 canvas = infinitePixels,
                 sourceWidth = canvas.width,
                 sourceHeight = canvas.height,
-                generated = pixels,
+                generated = prepared.blendAlpha?.let { InpaintComposite.composite(pixels, prepared.originalPixels, it) } ?: pixels,
                 plan = plan,
             ) != null
             if (!touched) return@withContext null
@@ -7941,7 +8198,9 @@ class AppState(app: Application) : AndroidViewModel(app) {
     private class PreparedInfiniteFrame(
         val basePng: ByteArray,
         val maskPng: ByteArray,
-        val drawnInFrame: Int,
+        val strength: Double,
+        val originalPixels: IntArray,
+        val blendAlpha: ByteArray?,
     )
 
     // ---------------------------------------------------------------- 其它

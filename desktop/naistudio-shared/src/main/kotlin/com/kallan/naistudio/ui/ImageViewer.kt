@@ -23,6 +23,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -193,6 +195,15 @@ fun FullscreenImageViewer(
                     image.bitmap?.let { it.width to it.height }
                         ?: image.path?.let { runCatching { MaskCodec.imageSize(imageIo, it) }.getOrNull() }
                 }
+                var viewport by remember { mutableStateOf(IntSize.Zero) }
+                val decodeDimension by remember(intrinsic, page) {
+                    derivedStateOf {
+                        com.kallan.naistudio.models.PreviewResolution.dimension(
+                            intrinsic?.first ?: 0, intrinsic?.second ?: 0,
+                            viewport.width, viewport.height, if (page == pagerState.currentPage) zoomScale else 1f,
+                        )
+                    }
+                }
                 Box(
                     // ⚠️ **顺序至关重要：手势在前、graphicsLayer 在后。**
                     // Compose 的 modifier 是链式的：写在 `graphicsLayer{}` **后面**的 pointerInput
@@ -202,6 +213,7 @@ fun FullscreenImageViewer(
                     // 手势放前面 → 读到的是**原始屏幕坐标**，平移 1:1、捏合比例准确。
                     Modifier
                         .fillMaxSize()
+                        .onSizeChanged { viewport = it }
                         // 双指缩放 / 放大后平移。未放大时**不消费**单指横向拖动，让 pager 翻页。
                         // 用 Initial 通道：抢在 pager 之前处理并消费，避免 pager 也来抢这一笔手势。
                         .pointerInput(page, images.size, intrinsic) {
@@ -364,7 +376,7 @@ fun FullscreenImageViewer(
 
                         image.path != null -> FileImage(
                             path = image.path,
-                            maxDimension = 2048,
+                            maxDimension = decodeDimension,
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize(),
                         )

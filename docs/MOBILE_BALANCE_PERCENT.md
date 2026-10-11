@@ -1,0 +1,9 @@
+# Mobile header remaining quota
+
+Both mobile account chip layouts now show a remaining percentage and use the same value for their progress bar. Official V5 usage no longer depends on the selected generation model. Third-party quota uses remaining daily V5 / daily limit when finite, then remaining monthly Anlas / monthly limit when available. Values clamp to 0–100 and arithmetic uses Long to avoid overflow. Unlimited quota shows infinity; missing totals show an unknown percentage rather than deriving a denominator from the balance. Official non-Opus accounts with no quota total retain the balance only.
+
+Tapping the header refreshes third-party quota together with account balance. Five regressions cover remaining-vs-used percentage, monthly fallback, unknown/unlimited data, numeric overflow/clamping and official usage.
+
+Verification: Android unit tests and local release assembly passed; all five new regression tests passed. Built 1.1.153, next iteration 154. Formal signing certificate verified and installed over the connected phone with data retained. This is a private source backup, not a public Release.
+
+Follow-up: verified the installed 1.1.153 UI on the connected phone. The progress bar appeared, but the long tier/quota caption clipped after V5 due to the three canvas-mode buttons sharing the row. The floating capsule now reserves a separate non-wrapping percentage field, makes the tier ellipsize first, and reduces badge/gap padding. Android unit tests and release assembly passed for 1.1.154 (538 tests, no failures); next iteration 155. Formal signature verified. Device install was cancelled by Android with INSTALL_FAILED_ABORTED: User rejected permissions. The device remains on 1.1.153; the signed 1.1.154 package is ready for confirmation/manual installation. New-layout device visual verification remains pending.

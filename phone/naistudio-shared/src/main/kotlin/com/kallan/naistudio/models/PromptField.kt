@@ -29,6 +29,25 @@ object PromptField {
     fun isPlot(field: String): Boolean = field == PLOT
 
     /**
+     * **角色 / 漫画格子的提示词框**（每个框各配一条工具栏之后才有了身份，用户 2026-09-19）。
+     *
+     * 编码成 `char:<下标>:p`（正面词）/ `char:<下标>:n`（负面词）。
+     * 角色模式与漫画模式**共用同一套下标**（都是 `extras.activeItems`），所以不用再分模式。
+     */
+    const val CHAR_PREFIX = "char:"
+
+    fun charKey(index: Int, negative: Boolean): String =
+        "$CHAR_PREFIX$index${if (negative) ":n" else ":p"}"
+
+    fun isChar(field: String): Boolean = field.startsWith(CHAR_PREFIX)
+
+    /** 解析下标；解析不出来回 -1（调用方 `getOrNull` 会兜住）。 */
+    fun charIndex(field: String): Int =
+        field.removePrefix(CHAR_PREFIX).substringBefore(':').toIntOrNull() ?: -1
+
+    fun charNegative(field: String): Boolean = field.endsWith(":n")
+
+    /**
      * 兜底成 [POSITIVE]。
      *
      * 界面上的"当前选中框"默认就是正面提示词，而持久化过的值理论上可能因为
@@ -42,8 +61,13 @@ object PromptField {
      * ⚠️ 别拿 [orDefault] 当这个用：它把 [PLOT] 折成 [POSITIVE] ✗ ——
      * 于是工具栏的翻译/优化/撤销/重做**看着"作用于剧情"、实际改的是正面提示词**
      * （用户 2026-09-18 报的"这个工具栏只能在提示词栏使用"就是这个）。
+     * 角色 / 分镜的框（[isChar]）同理：它们也自成一档，原样返回。
      */
-    fun stackKey(field: String): String = if (isPlot(field)) PLOT else orDefault(field)
+    fun stackKey(field: String): String = when {
+        isPlot(field) -> PLOT
+        isChar(field) -> field
+        else -> orDefault(field)
+    }
 }
 
 /** 读某个框的文本。不认识的名字按正面提示词处理（见 [PromptField.orDefault]）。 */
@@ -78,14 +102,13 @@ sealed interface TextFieldTarget {
     /**
      * 风格 / 正面 / 负面三条提示词。
      *
-     * ⚠️ 用户 2026-09-24：「**生成图片上的对文本框的垃圾桶还是对有些文本框不生效，
-     * 怀疑是文本框未统一指针**」——**这一条就是那个"不统一"**：
-     * 三个框过去**注册的是同一个 [Prompt]**，于是垃圾桶分不清用户站在哪一条，
-     * 只能**一次清三条**；而正面 / 负面现在是**切换着看**的（一次只看得到一条），
+     * ⚠️ 用户 2026-09-24：「**生成图片上的对文本框的垃圾桶还是对有些文本框不生效**，
+     * 怀疑是**文本框未统一指针**」——**这一条就是那个"不统一"**：
+     * 三个框过去注册的是同一个 [Prompt]，垃圾桶分不清用户站在哪一条，只能**一次清三条**；
+     * 而正面 / 负面现在是**切换着看**的（同屏只看得到一条），
      * 于是"清掉了我看不见的那两条"看起来就像"垃圾桶不生效 / 清错了"。
      *
-     * 现在**三条各带自己的字段**（[field]）——垃圾桶照着那一条清，
-     * 「作用于 X」也跟着显示对应名字（不再是笼统的"提示词"）。
+     * 现在**三条各带自己的字段**（[field]）——垃圾桶照着那一条清。
      *
      * @param field `PromptField.STYLE / POSITIVE / NEGATIVE`
      */

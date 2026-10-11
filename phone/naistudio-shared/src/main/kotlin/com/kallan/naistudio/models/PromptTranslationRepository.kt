@@ -7,27 +7,61 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** User-local translation data and its derived index. No upstream data is bundled. */
+/** Production uses the locally installed SQL dictionary; prepare() never downloads. */
 class PromptTranslationRepository(
     private val cacheDir: File,
+    private val openLexicon: ((File) -> SqlTagLexicon?)? = null,
     private val loadJson: (String) -> JSONObject,
 ) {
+    private var primaryLexicon: SqlTagLexicon? = null
+    private var legacyCachesRemoved = false
     private val mutex = Mutex()
     private var memoryId: String? = null
     private var memoryFingerprint: String? = null
     private var memoryDict: PromptTranslate.Dict? = null
 
+    fun installed(): Boolean = primaryLexicon != null || TagLexiconAsset.installed(File(cacheDir, "dictionary"))
+
+    suspend fun download(progress: (Int) -> Unit) = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            val context = kotlin.coroutines.coroutineContext
+            TagLexiconAsset.download(File(cacheDir, "dictionary"), progress) {
+                context.ensureActive()
+            }
+        }
+    }
+
     suspend fun prepare(codexId: String): PromptTranslate.Dict = mutex.withLock {
         require(codexId.matches(Regex("[a-zA-Z0-9_-]+")))
+        val primary = withContext(Dispatchers.IO) {
+            primaryLexicon ?: openLexicon?.invoke(TagLexiconAsset.prepare(File(cacheDir, "dictionary")))
+                ?.also { primaryLexicon = it }
+        }
+        if (primary != null) {
+            withContext(Dispatchers.IO) {
+                if (!legacyCachesRemoved) {
+                    // Only obsolete dictionary cache files; never settings or codex documents.
+                    val obsolete = Regex("(?:tag_zh_|translation_index_)[a-zA-Z0-9_-]+\\.json")
+                    cacheDir.listFiles()?.filter { it.isFile && obsolete.matches(it.name) }
+                        ?.forEach { runCatching { it.delete() } }
+                    legacyCachesRemoved = true
+                }
+            }
+            memoryDict?.takeIf { it.primary === primary }?.let { return@withLock it }
+            return@withLock PromptTranslate.Dict(emptyMap(), emptyMap(), primary = primary)
+                .also { remember(codexId, null, it) }
+        }
+        check(openLexicon == null) { "The main dictionary could not be opened" }
         val fingerprint = withContext(Dispatchers.IO) { sourceFingerprint(codexId) }
         memoryDict?.let {
-            if (memoryId == codexId && memoryFingerprint == fingerprint && fingerprint != null) {
+            if (memoryId == codexId && memoryFingerprint == fingerprint && (fingerprint != null || primary != null)) {
                 return@withLock it
             }
         }

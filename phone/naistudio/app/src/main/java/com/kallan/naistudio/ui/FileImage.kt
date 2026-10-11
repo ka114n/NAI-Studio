@@ -7,6 +7,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -120,7 +121,7 @@ fun FileImage(
 ) {
     val context = LocalContext.current
     val cacheKey = "$path@$maxDimension@$useThumbnail"
-    val bitmap by produceState<Bitmap?>(initialValue = ThumbnailCache.get(cacheKey), cacheKey) {
+    val bitmap by key(path) { produceState<Bitmap?>(initialValue = ThumbnailCache.get(cacheKey), cacheKey) {
         val cached = ThumbnailCache.get(cacheKey)
         if (cached != null) {
             value = cached
@@ -139,10 +140,9 @@ fun FileImage(
             BitmapFactory.decodeFile(source, bounds)
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
 
-            var sample = 1
-            while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) {
-                sample *= 2
-            }
+            val sample = com.kallan.naistudio.models.PreviewResolution.sample(
+                bounds.outWidth, bounds.outHeight, maxDimension,
+            )
             val raw = BitmapFactory.decodeFile(
                 source,
                 BitmapFactory.Options().apply { inSampleSize = sample },
@@ -166,7 +166,7 @@ fun FileImage(
         }
         if (decoded != null) ThumbnailCache.put(cacheKey, decoded)
         value = decoded
-    }
+    } }
 
     val current = bitmap
     if (current != null) {

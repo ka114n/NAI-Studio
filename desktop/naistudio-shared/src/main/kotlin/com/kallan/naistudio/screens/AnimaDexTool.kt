@@ -89,6 +89,10 @@ fun AnimaDexTool(
      */
     onNamePick: ((AnimaCharacter) -> Unit)? = null,
 ) {
+    val resultGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    LaunchedEffect(state.animaResultRevision) {
+        resultGridState.scrollToItem(0)
+    }
     var filtersOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
 
@@ -217,6 +221,7 @@ fun AnimaDexTool(
                 )
 
                 else -> LazyVerticalGrid(
+                    state = resultGridState,
                     columns = GridCells.Fixed(state.animaColumns),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),

@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "rows": 330745,
+  "source_rows": 330745,
+  "source_sha256": "e6dbf268d76ffe5ea3cda7afc979ed735e479d1ab0b063848bd803f63f896e0d",
+  "sha256": "4af75e2bcad072b9c46875ef60c0b32aa3487ebb911745b99a1e4238218c183b",
+  "bytes": 78815232,
+  "source": "https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table",
+  "license": "MIT",
+  "format": "SQLite FTS4 codepoint uni/bigram index"
+}

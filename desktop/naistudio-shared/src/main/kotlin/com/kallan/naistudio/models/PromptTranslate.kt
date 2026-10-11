@@ -288,13 +288,62 @@ object PromptTranslate {
     // ------------------------------------------------------------------ 词典
 
     /**
-     * 双向词典。**在 App 里由已加载的 `TagZhProtocol.Shard` 现构**（不打包数据 —— 授权口径）。
+     * 双向词典：只读 SQL 主词库，加上旧缓存和用户别名的轻量覆盖层。
      *
      * @param freq tag ⇒ 出现次数（**排序用**）。没有也给得对，只是同义候选里可能挑到冷门的
      *   （实测：`长发` 有 long hair / long hairs / longhair 三个候选，没有频次会挑到 `longhair`）。
      *   数据来源见 `AppState.promptTranslateFreq()`：**用已经下载在本地的那本词条现算**。
      */
-    class Dict(val fwd: Map<String, String>, val rev: Map<String, List<String>>)
+    class Dict(
+        val fwd: Map<String, String>, val rev: Map<String, List<String>>,
+        val primary: SqlTagLexicon? = null,
+        val customAliases: Map<String, List<String>> = emptyMap(),
+        val removed: Set<String> = emptySet(), val replaced: Set<String> = emptySet(),
+    ) {
+        internal val fuzzyAliases by lazy { rev.entries.map { it.key.replace(WS_RE, " ").trim() to it.value } }
+        internal val fuzzyCache = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+        internal val searchIndex by lazy { UserTagDictionary.buildSearchIndex(this) }
+
+        val isNotEmpty: Boolean get() = primary != null || fwd.isNotEmpty()
+        fun primaryAllowed(tag: String): Boolean = tag !in removed && tag !in replaced
+        fun translation(text: String): String? {
+            val key = SqlTagLexicon.normalize(text)
+            if (key in removed) return null
+            return customAliases[key]?.firstOrNull()
+                ?: primary?.takeIf { primaryAllowed(key) }?.entry(key)?.chinese
+                ?: fwd[key] ?: fwd[text]
+        }
+        fun containsTag(text: String): Boolean = translation(text) != null
+        private fun isCharacterTag(tag: String): Boolean =
+            primary?.entry(tag)?.category == SqlTagLexicon.CHARACTER_CATEGORY
+
+        internal fun exactCandidates(text: String): List<String> {
+            val key = SqlTagLexicon.normalize(text)
+            val custom = customAliases.filterValues { labels -> labels.any { SqlTagLexicon.normalize(it) == key } }.keys
+            val main = primary?.chinese(key).orEmpty().filter { primaryAllowed(it.tag) }.map { it.tag }
+            return (custom + main + rev[text].orEmpty()).filter { SqlTagLexicon.normalize(it) !in removed }.distinct()
+        }
+        internal fun indexedFuzzyCandidates(text: String): List<String> {
+            val custom = customAliases.flatMap { (tag, labels) -> labels.map { it to tag } }
+                .filter { (label, tag) -> tag !in removed && label.contains(text) && isCharacterTag(tag) }
+                .sortedWith(compareBy<Pair<String,String>> { if (it.first.startsWith(text)) 0 else 1 }
+                    .thenBy { it.first.length }.thenBy { it.first })
+            if (custom.isNotEmpty()) return custom.filter { it.first == custom.first().first }.map { it.second }.distinct()
+            val main = primary?.fuzzyChineseCharacters(text).orEmpty().filter { primaryAllowed(it.tag) }
+            if (main.isEmpty()) return emptyList()
+            val chosen = SqlTagLexicon.normalize(main.first().chinese)
+            return main.filter { SqlTagLexicon.normalize(it.chinese) == chosen }.map { it.tag }.distinct()
+        }
+    }
+
+    /** Exact matches cover every category. Partial Chinese expansion is character-only. */
+    fun chineseCandidates(text: String, dict: Dict, fuzzy: Boolean = false): List<String> {
+        val key = text.replace(WS_RE, " ").trim()
+        dict.exactCandidates(key).takeIf { it.isNotEmpty() }?.let { return it }
+        if (!fuzzy || key.isEmpty() || !hasCJK(key)) return emptyList()
+        if (dict.fuzzyCache.size >= 256 && !dict.fuzzyCache.containsKey(key)) dict.fuzzyCache.clear()
+        return dict.fuzzyCache.getOrPut(key) { dict.indexedFuzzyCandidates(key) }
+    }
 
     /** 候选里明显的噪声（词表被污染过的原词）：`</style>1girl`、`blue eyes/*蓝眼睛*/` 之类。 */
     private fun cleanTag(raw: String): String {
@@ -401,6 +450,7 @@ object PromptTranslate {
     enum class From { DICT, API, MISS }
 
     data class Params(
+        val fuzzyMatching: Boolean = false,
         val maxChars: Int = 1500,
         val maxItems: Int = 40,
         val keepWeight: Boolean = true,
@@ -408,11 +458,9 @@ object PromptTranslate {
         val space: Boolean = true,
     )
 
-    private var groupSeq = 0
-
     /** 切段 + 逐段判定。壳里多个 tag ⇒ 多个 Item，共享一个 `group`。 */
-    fun plan(raw: String, dict: Dict): List<Item> {
-        groupSeq = 0
+    fun plan(raw: String, dict: Dict, fuzzyMatching: Boolean = false): List<Item> {
+        var groupSeq = 0
         val out = mutableListOf<Item>()
         for (piece in splitInput(raw)) {
             val sh = splitWeight(piece.text)
@@ -422,13 +470,13 @@ object PromptTranslate {
             val gid = if (grouped) ++groupSeq else null
             list.forEachIndexed { idx, sub ->
                 val last = idx == list.size - 1
-                out.add(classify(sub, piece, sh, gid, if (last) sh.tail else "", dict))
+                out.add(classify(sub, piece, sh, gid, if (last) sh.tail else "", dict, fuzzyMatching))
             }
         }
         return out
     }
 
-    private fun classify(core: String, piece: Piece, sh: Shell, gid: Int?, tail: String, dict: Dict): Item {
+    private fun classify(core: String, piece: Piece, sh: Shell, gid: Int?, tail: String, dict: Dict, fuzzyMatching: Boolean): Item {
         fun base(kind: Kind, dir: Dir, tag: String?, zh: String?) = Item(
             raw = piece.text, body = core, line = piece.line,
             w = sh.w, pre = sh.pre, suf = sh.suf, tail = tail, group = gid,
@@ -436,16 +484,16 @@ object PromptTranslate {
         )
         if (hasCJK(core)) {
             val key = core.replace(WS_RE, " ").trim()
-            val cands = dict.rev[key] ?: dict.rev[core.trim()]
+            val cands = chineseCandidates(key, dict, fuzzyMatching)
             if (!cands.isNullOrEmpty()) {
                 // 用户口径：**不做候选**，只取频次首选
                 val tag = cands[0]
-                return base(Kind.ZH, Dir.ZH2TAG, tag, dict.fwd[tag] ?: core)
+                return base(Kind.ZH, Dir.ZH2TAG, tag, dict.translation(tag) ?: core)
             }
             return base(Kind.NEED, Dir.ZH2TAG, null, core)
         }
         val k = zhKey(core).ifEmpty { core.trim().lowercase() }
-        val zh = dict.fwd[k] ?: dict.fwd[core.trim().lowercase()]
+        val zh = dict.translation(k) ?: dict.translation(core.trim().lowercase())
         if (zh != null) return base(Kind.TAG, Dir.TAG2ZH, core, zh)
         return base(Kind.NEED, Dir.TAG2ZH, core, null)
     }
@@ -539,7 +587,9 @@ object PromptTranslate {
         params: Params,
         backend: suspend (List<String>) -> List<String>,
     ): Outcome {
-        val pieces = plan(raw, dict)
+        val pieces = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            plan(raw, dict, params.fuzzyMatching)
+        }
         val need = collectNeed(pieces)
         val batches = planBatches(need, params)
         val got = HashMap<Int, String>()
@@ -598,7 +648,8 @@ object PromptTranslate {
         }
         val textOf = { b: Block ->
             val inner = b.items.joinToString(sep) { it.inner }
-            val wrapped = if (params.keepWeight && b.pre.isNotEmpty()) "${b.pre}$inner${b.suf}" else inner
+            val wrapped = if (params.keepWeight && b.pre.isNotEmpty())
+                "${b.pre}$inner${PromptWeight.closingSuffix(inner, b.suf)}" else inner
             wrapped + b.tail
         }
         val zhOf = { b: Block -> b.items.joinToString("，") { it.zh ?: it.raw } }

@@ -55,7 +55,7 @@ import org.junit.Test
  */
 class ComicScreenSmokeTest {
 
-    private val platform: Platform = desktopPlatform()
+    private val platform: Platform = isolatedDesktopTestPlatform()
 
     /** 一个**不弹真对话框**的宿主（离屏测试里没人点"选图"，只要接口在就行 ✓）。 */
     private class QuietUiHost : UiHost {
@@ -86,15 +86,25 @@ class ComicScreenSmokeTest {
 
     @OptIn(ExperimentalComposeUiApi::class)
     private fun render(width: Int = 1400, height: Int = 900, body: @Composable () -> Unit): ByteArray? {
-        val image = renderComposeScene(width, height, Density(1f)) {
-            CompositionLocalProvider(
-                LocalPlatform provides platform,
-                LocalUiHost provides QuietUiHost(),
-            ) {
-                MaterialTheme { body() }
+        // AppState uses Dispatchers.Main (Swing). Rendering on the JUnit thread races
+        // its asynchronous updates with Compose's initial subcomposition. Use the same
+        // UI thread as the real desktop app; no actual window or input is created.
+        var result: ByteArray? = null
+        val draw = {
+            val image = renderComposeScene(width, height, Density(1f)) {
+                CompositionLocalProvider(
+                    LocalPlatform provides platform,
+                    LocalUiHost provides QuietUiHost(),
+                ) {
+                    MaterialTheme { body() }
+                }
             }
+            result = image.encodeToData(EncodedImageFormat.PNG)?.bytes
+            image.close()
         }
-        return image.encodeToData(EncodedImageFormat.PNG)?.bytes
+        if (javax.swing.SwingUtilities.isEventDispatchThread()) draw()
+        else javax.swing.SwingUtilities.invokeAndWait(draw)
+        return result
     }
 
     /** 每个用例都从干净的盘开始（隔离档案是跨次保留的 ✓，不清会有上一轮的残留 ✗）。 */

@@ -10,10 +10,12 @@ The canonical local checkout is `C:/Users/kallan/Desktop/NAI-Studio/source`. Win
 - Apply cross-platform changes to both platform source trees when required. Do not discard other ongoing changes.
 - Do not call Astra without an explicit user instruction. If the user requests Luna delegation, use xhigh reasoning.
 
-## Build verification
+## Build and delivery
 
-Windows: from `desktop/naistudio-desktop`, run `..\gradlew.bat test desktopInput --no-daemon` with JDK 17.
+User instruction (2026-10-05): after coding, build and deliver directly; do not run either platform's tests unless the user explicitly requests tests. Required compilation, packaging, signature verification and installation are still part of delivery. Record that tests were skipped in the verification notes.
 
-Android: from `phone/naistudio`, configure the local SDK and run `gradlew.bat :app:testLocalDebugUnitTest :app:assembleLocalRelease --no-daemon` with JDK 17. The assemble task increments the local version iteration; distinguish the built version from the next build number.
+Windows: from `desktop/naistudio-desktop`, run `..\gradlew.bat desktopInput --no-daemon` with JDK 17.
+
+Android: from `phone/naistudio`, configure the local SDK and run `gradlew.bat :app:assembleLocalRelease --no-daemon` with JDK 17. The assemble task increments the local version iteration; distinguish the built version from the next build number.
 
 Android release signing keys must stay outside the checkout. A Git backup alone does not restore the private signing identity; the owner must retain its separate secure backup.

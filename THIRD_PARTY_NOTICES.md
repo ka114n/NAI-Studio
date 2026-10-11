@@ -11,6 +11,8 @@ The project-level MIT license applies only to code and materials that the projec
 
 ## Services and release behavior
 
+- **NanoHTTPD 2.3.1:** desktop HTTPS sharing's loopback HTTP server uses this BSD-3-Clause component. The upstream notice is preserved in `docs/third-party/NanoHTTPD-LICENSE.txt` and embedded in the desktop JAR at `META-INF/licenses/NanoHTTPD-LICENSE.txt`. Upstream: https://github.com/NanoHttpd/nanohttpd/tree/nanohttpd-project-2.3.1.
+
 - The app sends requests to user-configured image-generation and optional LLM services. Keep credentials user-supplied; never commit service keys or signing secrets.
 - Public Android releases use a separately managed release signing key stored outside the repository. Historical debug builds may have a different signature.
 - Separately from `dictionary.tsv`, the tag-codex screen can optionally show codex entries marked NSFW; parsing excludes them by default. State the intended audience/content policy and decide whether that option should remain available in the release.

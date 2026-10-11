@@ -45,6 +45,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import com.kallan.naistudio.ui.RefHint
+import com.kallan.naistudio.ui.RefBtn
+import com.kallan.naistudio.ui.RefBtnKind
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,6 +107,7 @@ fun SettingsScreen(state: AppState) {
     }
 
     // 每一栏都能"收纳"（用户要求全部可折叠），分别记住展开状态
+    var pairingOpen by rememberSaveable { mutableStateOf(false) }
     var storageOpen by rememberSaveable { mutableStateOf(false) }
     var generateOpen by rememberSaveable { mutableStateOf(false) }
     var persistOpen by rememberSaveable { mutableStateOf(false) }
@@ -120,6 +125,21 @@ fun SettingsScreen(state: AppState) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        CollapsibleSectionCard(
+            title = t("settings.reversePairing"),
+            expanded = pairingOpen,
+            onToggle = { pairingOpen = !pairingOpen },
+        ) {
+            RefHint(t("reverse.remote.hint"))
+            OutlinedTextField(value = state.reverseRemoteAddress, onValueChange = state::updateReverseRemoteAddress,
+                label = { Text(t("reverse.remote.address")) }, enabled = !state.reverseBusy, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = state.reverseRemoteCode, onValueChange = state::updateReverseRemoteCode,
+                label = { Text(t("reverse.remote.code")) }, enabled = !state.reverseBusy, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+            RefBtn(t("reverse.remote.test"), onClick = { state.runRemoteReverse(true) }, enabled = !state.reverseBusy,
+                modifier = Modifier.fillMaxWidth(), kind = RefBtnKind.Secondary)
+            if (state.reverseRemoteStatus.isNotBlank()) RefHint(state.reverseRemoteStatus)
+        }
         CollapsibleSectionCard(
             title = t("settings.storage"),
             expanded = storageOpen,
@@ -194,6 +214,13 @@ fun SettingsScreen(state: AppState) {
                 onCheckedChange = { value -> state.setSettings { it.copy(streamPreviewEnabled = value) } },
             )
             // 官方 2× 放大：付费接口，默认关；提示里明确写清消耗与"编辑仍用放大前那张"
+            Text(t("upscale.providerTitle"), style = MaterialTheme.typography.labelMedium)
+            SegmentedCapsule(
+                options = listOf(NaiOption(t("upscale.providerOfficial"), "official"), NaiOption(t("upscale.providerRtx"), "rtx")),
+                selected = settings.upscaleProvider,
+                onSelect = { value -> state.setSettings { it.copy(upscaleProvider = value) } },
+            )
+            Text(t("upscale.providerRtxHint"), style = MaterialTheme.typography.bodySmall, color = LocalRef.current.muted)
             SwitchRow(
                 label = t("upscale.settingAuto"),
                 help = t("upscale.settingAutoHint"),

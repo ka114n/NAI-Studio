@@ -50,12 +50,37 @@ import javax.crypto.spec.SecretKeySpec
  * | 另存 | SAF | 普通目录拷贝 |
  */
 fun desktopPlatform(): Platform = object : Platform {
+    override val localImageTagger = DesktopLocalImageTagger()
+
+    override fun openTagLexicon(file: File): com.kallan.naistudio.models.SqlTagLexicon {
+        val connection = org.sqlite.SQLiteConfig().apply {
+            setReadOnly(true)
+            setCacheSize(-4096)
+            setBusyTimeout(2000)
+        }.createConnection("jdbc:sqlite:${file.absolutePath}")
+        try {
+            return com.kallan.naistudio.models.SqlTagLexicon { sql, args ->
+                synchronized(connection) {
+                    connection.prepareStatement(sql).use { statement ->
+                        args.forEachIndexed { index, value -> statement.setString(index + 1, value) }
+                        statement.executeQuery().use { result ->
+                            buildList {
+                                while (result.next()) add((1..result.metaData.columnCount).map { result.getString(it).orEmpty() })
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (error: Exception) { connection.close(); throw error }
+    }
+
     override val kv: KeyValueStore = FileKeyValueStore(File(appDir(), "prefs.json"))
     override val secrets: SecretStore = FileSecretStore(File(appDir(), "secrets.bin"))
     override val paths: AppPaths = DesktopAppPaths
     override val gallery: GallerySink = WindowsGallerySink
     override val device: DeviceInfo = DesktopDeviceInfo
     override val images: ImageIo = DesktopImageIo
+    override val taggerSharing = DesktopTaggerSharing(localImageTagger, secrets, images)
 
     /**
      * 系统 UI 缩放（125% / 150% 那种）—— 见 `Platform.uiScale` 的说明。
@@ -320,7 +345,7 @@ private fun penRotationDegrees(radians: Double): Float {
 
 
 /** 电脑版版本号。见 [Platform.appVersion] 的说明。 */
-const val DESKTOP_VERSION = "1.1.148"
+const val DESKTOP_VERSION = "3.0.0"
 
 /** "关于"里显示的构建标识（电脑版没有 BuildConfig，给个能看出是电脑版的串）。 */
 const val DESKTOP_BUILD_STAMP = "desktop"
@@ -718,8 +743,8 @@ object DesktopImageIo : ImageIo {
     }.getOrNull()
 
     override fun toComposeImage(image: NativeImage): ImageBitmap? = runCatching {
-        // 走 skia：把 PNG 字节交给 skiko 解成 Compose 的 ImageBitmap（Compose Desktop 自带 skiko）
-        org.jetbrains.skia.Image.makeFromEncoded(pngBytes(image)).toComposeImageBitmap()
+        // Transfer pixels directly; encoding PNG and decoding it again delays large previews.
+        composeImageOf(pixelsOf(image), image.width, image.height)
     }.getOrNull()
 
     /**
@@ -766,7 +791,26 @@ object DesktopImageIo : ImageIo {
         (image as DesktopNativeImage).image.colorModel.hasAlpha()
 
     override fun decodeSampled(bytes: ByteArray, maxDimension: Int): NativeImage? = runCatching {
-        val source = javax.imageio.ImageIO.read(bytes.inputStream()) ?: return null
+        // Subsample while reading instead of decoding a huge full raster for a thumbnail.
+        val source = javax.imageio.ImageIO.createImageInputStream(bytes.inputStream()).use { stream ->
+            if (stream == null) return null
+            val readers = javax.imageio.ImageIO.getImageReaders(stream)
+            if (!readers.hasNext()) return null
+            val reader = readers.next()
+            try {
+                reader.setInput(stream, true, true)
+                val width = reader.getWidth(0)
+                val height = reader.getHeight(0)
+                var sample = 1
+                while (maxOf(width, height).toLong() / (sample.toLong() * 2) >= maxDimension.coerceAtLeast(1)) {
+                    sample *= 2
+                }
+                val params = reader.defaultReadParam.apply { setSourceSubsampling(sample, sample, 0, 0) }
+                reader.read(0, params)
+            } finally {
+                reader.dispose()
+            }
+        } ?: return null
         val longest = maxOf(source.width, source.height)
         if (longest <= maxDimension) {
             DesktopNativeImage(source)

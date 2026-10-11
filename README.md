@@ -32,7 +32,7 @@
 
 ### 框一下，画面就长出来 · 无限画布
 
-在已有画面旁边框一块区域，点「拓展生成」，新内容接着原图往外长。接缝自动羽化，框多大都行，会自动换算成合适的请求尺寸；参考多宽的周边画面也可以调。
+在已有画面旁边框一块区域，点「拓展生成」，新内容接着原图往外长。接缝自动羽化，生成框可选择对应的免费档尺寸，空白区域自动生成遮罩，再将结果回贴到原画面。
 
 <p align="center"><img src="docs/images/infinite-canvas.webp" width="720" alt="无限画布：生成框沿着已有画面向外拓展"></p>
 
@@ -59,7 +59,7 @@
 | 功能 | 说明 |
 | --- | --- |
 | 文生图、图生图、局部重绘 | 支持 NAI V4、V4.5、V5 全部模型。局部重绘在内置画布编辑器里直接涂遮罩，画笔、橡皮、套索、吸管都有。 |
-| 提示词工具 | 用 Tag Codex 查标签，用 AnimaDex 查画师风格，内置翻译；常用风格提示词可以从预设里一键选。 |
+| 提示词工具 | 可选下载 330,745 条主词库，支持中英对照、词条增补/修改/删除、提示词卡片拖动及权重调整；翻译支持百度与 LLM。 |
 | 图库 | 按时间或随机排列，支持分组。生成参数保留在应用内历史中，可选择是否写入 PNG 元数据；改过的参数可以一键重置。 |
 | 用量统计 | 像 GitHub 贡献图一样按月查看每天生成了多少张，电脑和手机显示一致。 |
 | 两种接入方式 | 填 NovelAI 的 Persistent API Token 直连官方，或填自托管网关地址，随时切换。 |
@@ -71,14 +71,14 @@
 
 在 [Releases](https://github.com/ka114n/NAI-Studio/releases) 下载。
 
-当前版本：**1.1.148**。[更新说明](docs/releases/1.1.148.md)
+当前版本：**3.0（3.0.0）**。[更新说明](docs/releases/3.0.0.md)
 
 双端支持应用内检查、下载及安装更新。1.1.142 及更早版本需手动升级到 1.1.143 一次，之后可在设置 → 关于中更新；Windows 自动替换程序并重启，Android 由系统确认覆盖安装。[更新机制说明](docs/UPDATES.md)
 
 - Windows：解压 ZIP，打开 `NAI Studio.exe`，保留同目录的 `app` 和 `runtime`，无需安装 Java。
 - Android：安装 APK，要求 Android 8.0 或更高。如果旧测试版签名冲突，请先导出备份，再卸载测试版后安装。
 
-Windows 网页笔刷首次使用会下载 Chromium 运行组件。翻译词典与索引首次启动在后台准备，需要网络；之后使用本机缓存。
+Windows 网页笔刷首次使用会下载 Chromium 运行组件。首次打开词典或点击翻译时可自行选择下载主词库，之后使用本机缓存。电脑本地反推和 RTX 放大首次使用需另外下载模型及运行环境。
 
 ## 源码结构
 
@@ -96,7 +96,7 @@ Windows 网页笔刷首次使用会下载 Chromium 运行组件。翻译词典�
 Windows，在 `desktop/naistudio-desktop` 执行：
 
 ```powershell
-..\gradlew.bat test desktopInput --no-daemon
+..\gradlew.bat desktopInput --no-daemon
 ```
 
 `desktopInput` 收集应用和依赖 JAR 到 `build/jpackage-input`。可使用 JDK 的 `jpackage --type app-image` 制作便携版，主类为 `com.kallan.naistudio.desktop.MainKt`。发布时将 `docs/brush-lab*.html` 放入应用的 `app` 目录。
@@ -104,10 +104,10 @@ Windows，在 `desktop/naistudio-desktop` 执行：
 Android，安装 SDK，在 `phone/naistudio/local.properties` 配置 `sdk.dir`，然后在 `phone/naistudio` 执行：
 
 ```powershell
-.\gradlew.bat :app:testLocalDebugUnitTest :app:assembleLocalRelease --no-daemon
+.\gradlew.bat :app:assembleLocalRelease --no-daemon
 ```
 
-Release APK 默认未签名，使用自己的密钥签名。构建会递增版本迭代文件，本次发布版本为 1.1.140。
+Release APK 默认未签名，使用自己的密钥签名。构建会递增版本迭代文件，当前版本系列为 3.0.x；本次发布版本为 3.0.0。
 
 ## 许可
 
